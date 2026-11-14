@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, Spin, Table, Typography } from 'antd';
 
-const API_ROOT = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+// The frontend and API share one origin on Vercel, so API requests use /api directly.
+const API_ROOT = '';
 
 async function readApiJson(response) {
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
-    throw new Error(`API đăng nhập chưa sẵn sàng (HTTP ${response.status}). Kiểm tra API server, MongoDB và VITE_API_URL khi deploy.`);
+    throw new Error(`API đăng nhập chưa sẵn sàng (HTTP ${response.status}). Kiểm tra API server và MongoDB khi deploy.`);
   }
   return response.json();
 }
