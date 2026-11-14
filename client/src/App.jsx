@@ -30,19 +30,27 @@ function AuthScreen({ onAuthenticated, initialError }) {
     event.preventDefault();
     setError('');
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     try {
       const response = await fetch(`${API_ROOT}/api/auth/${mode}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isRegister ? { name, email, password } : { identifier: email, password }),
+        signal: controller.signal,
       });
       const result = await readApiJson(response);
       if (!response.ok) throw new Error(result.message || 'Không thể đăng nhập.');
       localStorage.setItem('gom_token', result.token);
       onAuthenticated(result.user);
     } catch (requestError) {
+      if (requestError.name === 'AbortError') {
+        setError('Máy chủ chờ MongoDB quá lâu. Kiểm tra quyền truy cập MongoDB Atlas từ Vercel.');
+        return;
+      }
       setError(requestError.message || 'Không kết nối được máy chủ.');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }

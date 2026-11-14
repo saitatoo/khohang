@@ -43,7 +43,10 @@ let connectionPromise;
 export function connectToDatabase() {
   if (mongoose.connection.readyState === 1) return Promise.resolve();
   if (!connectionPromise) {
-    connectionPromise = mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gom')
+    connectionPromise = mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/gom', {
+      serverSelectionTimeoutMS: 8000,
+      connectTimeoutMS: 8000,
+    })
       .then(() => undefined)
       .catch(error => {
         connectionPromise = undefined;
