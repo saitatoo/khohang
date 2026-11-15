@@ -27,10 +27,25 @@ button, input { font: inherit; }
 .month-label.ant-typography { margin: 0; color: #41484c; font-size: 23px; line-height: 1.3; font-weight: 650; letter-spacing: -.7px; }
 .user-button.ant-btn { min-width: 115px; height: 38px; padding: 0 17px; border: 0; border-radius: 22px; background: #45b151; box-shadow: 0 2px 3px #33893b33; font-size: 12px; font-weight: 700; }
 .user-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
-.home-menu { display: grid; gap: 19px; padding: 20px 0 4px; }
-.menu-button.ant-btn { width: 100%; height: 31px; padding-inline: 10px; border: 1px solid #ffd49e; border-radius: 21px; color: #9c5700; background: #fffaf2; box-shadow: 0 2px 3px rgba(124,85,24,.04); font-size: 11px; font-weight: 700; }
-.menu-button.ant-btn:hover { border-color: #f0b96d !important; color: #824900 !important; background: #fff5e6 !important; }
-.menu-icon { display: inline-grid; place-items: center; width: 16px; font-size: 14px; }
+.home-menu { display: grid; gap: 10px; padding: 16px 0 4px; }
+.menu-button.ant-btn { display: flex; width: 100%; height: 52px; justify-content: flex-start; gap: 11px; padding: 0 13px; border: 1px solid #e7ebe6; border-radius: 17px; color: #438651; background: linear-gradient(115deg,#fff 0%,#f4faf1 100%); box-shadow: 0 2px 4px rgba(42,58,39,.1); font-size: 12px; font-weight: 700; }
+.menu-button.ant-btn:hover { border-color: #c8dfc8 !important; color: #28783b !important; background: linear-gradient(115deg,#fff 0%,#eff8ed 100%) !important; box-shadow: 0 3px 7px rgba(42,58,39,.13); }
+.menu-icon { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; color: #3f9251; background: #eaf5e9; font-size: 14px; }
+.install-section { margin: 14px -2px 2px; padding: 12px; border: 1px solid #e7ebe6; border-radius: 21px; background: linear-gradient(115deg,#fff 0%,#f4faf1 100%); box-shadow: 0 2px 4px rgba(42,58,39,.1); }
+.install-heading { display: grid; gap: 3px; }
+.install-heading span { color: #469257; font-size: 9px; font-weight: 800; letter-spacing: 1.4px; }
+.install-heading strong { color: #3f474b; font-size: 13px; }
+.install-description { margin: 5px 0 9px; color: #70797d; font-size: 10px; line-height: 1.45; }
+.install-share-card { display: grid; grid-template-columns: 108px minmax(0,1fr); align-items: center; gap: 10px; padding: 9px; border: 1px solid #e9e8e2; border-radius: 13px; background: #fff; }
+.install-qr { display: grid; place-items: center; width: 108px; height: 108px; overflow: hidden; border: 1px solid #e8e9e6; border-radius: 13px; }
+.install-share-copy { display: grid; min-width: 0; gap: 4px; }
+.install-share-copy > strong { color: #41484c; font-size: 10px; }
+.install-share-copy > span { color: #737c80; font-size: 9px; line-height: 1.35; }
+.install-share-copy > a { overflow: hidden; color: #68757a; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.install-share-copy .ant-btn { justify-self: start; height: 20px; padding: 0; color: #278640; font-size: 9px; font-weight: 700; }
+.android-install-button.ant-btn { width: 100%; height: 35px; margin-top: 10px; border: 0; border-radius: 9px; background: #318ed0; box-shadow: none; font-size: 11px; font-weight: 700; }
+.android-install-button.ant-btn:hover { background: #217fbe !important; }
+.install-ios-help { margin: 7px 1px 0; color: #4d5b50; font-size: 9px; font-weight: 600; }
 .attendance-frame-lookup { min-height: 100vh; padding: 10px 10px 16px; border-radius: 0 0 20px 20px; background: #fff; }
 .lookup-page { min-width: 0; }
 .lookup-heading-row { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; }
@@ -54,9 +69,12 @@ button, input { font: inherit; }
 .drive-sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .orders-table .ant-table { border-radius: 20px 20px 0 0; }
 .orders-table .ant-table-container { border-radius: 20px 20px 0 0; }
-.orders-table .ant-table-thead > tr > th { height: 52px; padding: 10px 14px; color: #111; background: #fffb00; border-right: 1px solid #d9d900; font-size: 12px; font-weight: 700; text-align: center; white-space: nowrap; }
+.orders-table .ant-table-thead > tr > th { height: 44px; padding: 8px 5px; color: #111; background: #fffb00; border-right: 1px solid #d9d900; font-size: 10px; font-weight: 700; text-align: center; white-space: nowrap; }
 .orders-table .ant-table-thead > tr > th::before { display: none !important; }
-.orders-table .ant-table-tbody > tr > td { padding: 8px 10px; border-right: 1px solid #e2e2e2; text-align: center; vertical-align: middle; }
+.orders-table .ant-table-tbody > tr > td { padding: 7px 5px; border-right: 1px solid #e2e2e2; text-align: center; vertical-align: middle; }
+.orders-table .zero-stock-shortage-row > td { color: #159bd0; font-weight: 600; }
+.orders-table .nonzero-stock-shortage-row > td { color: #dc3545; font-weight: 600; }
+.orders-table .stock-positive-shortage-zero-row > td { color: #26934a; font-weight: 600; }
 .orders-table .ant-table-thead > tr > th:last-child,
 .orders-table .ant-table-tbody > tr > td:last-child { border-right: 0; }
 .orders-table .ant-table-placeholder .ant-table-cell { height: 160px; padding: 12px 8px !important; border-bottom: 0; }

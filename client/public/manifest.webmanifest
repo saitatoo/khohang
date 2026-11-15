@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "Chấm công",
+  "short_name": "Chấm công",
+  "description": "Ứng dụng chấm công và quản lý kho hàng",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f2",
+  "theme_color": "#f7f6f2",
+  "icons": [
+    {
+      "src": "/icons/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

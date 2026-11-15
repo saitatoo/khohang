@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, Spin, Table, Typography } from 'antd';
+import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, QRCode, Spin, Table, Typography } from 'antd';
 
 // The frontend and API share one origin on Vercel, so API requests use /api directly.
 const API_ROOT = '';
@@ -89,21 +89,37 @@ function AuthScreen({ onAuthenticated, initialError }) {
   );
 }
 
+const isZeroValue = value => /^[+-]?0+(?:[.,]0+)?$/.test(String(value ?? '').trim());
+const isNonZeroValue = value => {
+  const text = String(value ?? '').trim();
+  if (!text) return false;
+  const number = Number(text.replace(/,/g, ''));
+  return Number.isFinite(number) && number !== 0;
+};
+const orderRowClass = record => {
+  const stockZero = isZeroValue(record.stock);
+  const shortageZero = isZeroValue(record.shortage);
+  if (stockZero && shortageZero) return 'zero-stock-shortage-row';
+  if (isNonZeroValue(record.stock) && isNonZeroValue(record.shortage)) return 'nonzero-stock-shortage-row';
+  if (isNonZeroValue(record.stock) && shortageZero) return 'stock-positive-shortage-zero-row';
+  return '';
+};
+
 const orderColumns = [
-  { title: 'STT', dataIndex: 'stt', key: 'stt', width: 65 },
-  { title: 'PO', dataIndex: 'po', key: 'po', width: 125 },
-  { title: 'Hình thể', dataIndex: 'style', key: 'style', width: 145 },
-  { title: 'SL đơn hàng', dataIndex: 'quantity', key: 'quantity', width: 150 },
-  { title: 'Ngày giao', dataIndex: 'etd', key: 'etd', width: 140 },
-  { title: 'Nhà cung cấp', dataIndex: 'supplier', key: 'supplier', width: 160 },
-  { title: 'Số đế', dataIndex: 'itemCode', key: 'itemCode', width: 140 },
-  { title: 'Ngày nhận', dataIndex: 'received', key: 'received', width: 145 },
-  { title: 'Số lượng nhận', dataIndex: 'receivedQty', key: 'receivedQty', width: 170 },
-  { title: 'Số thiếu', dataIndex: 'shortage', key: 'shortage', width: 125 },
-  { title: 'Ngày phát hoàn chỉnh', dataIndex: 'materialIssuedDate', key: 'materialIssuedDate', width: 220 },
-  { title: 'SL xuất', dataIndex: 'issuedQty', key: 'issuedQty', width: 135 },
-  { title: 'Tồn kho', dataIndex: 'stock', key: 'stock', width: 140 },
-  { title: 'Ghi chú', dataIndex: 'note', key: 'note', width: 180 },
+  { title: 'STT', dataIndex: 'stt', key: 'stt', width: 45 },
+  { title: 'PO', dataIndex: 'po', key: 'po', width: 100 },
+  { title: 'Hình thể', dataIndex: 'style', key: 'style', width: 110 },
+  { title: 'SL đơn hàng', dataIndex: 'quantity', key: 'quantity', width: 80 },
+  { title: 'Ngày giao', dataIndex: 'etd', key: 'etd', width: 95 },
+  { title: 'Nhà cung cấp', dataIndex: 'supplier', key: 'supplier', width: 110 },
+  { title: 'Số đế', dataIndex: 'itemCode', key: 'itemCode', width: 110 },
+  { title: 'Ngày nhận', dataIndex: 'received', key: 'received', width: 110 },
+  { title: 'Số lượng nhận', dataIndex: 'receivedQty', key: 'receivedQty', width: 110 },
+  { title: 'Số thiếu', dataIndex: 'shortage', key: 'shortage', width: 75 },
+  { title: 'Ngày phát hoàn chỉnh', dataIndex: 'materialIssuedDate', key: 'materialIssuedDate', width: 115 },
+  { title: 'SL xuất', dataIndex: 'issuedQty', key: 'issuedQty', width: 75 },
+  { title: 'Tồn kho', dataIndex: 'stock', key: 'stock', width: 75 },
+  { title: 'Ghi chú', dataIndex: 'note', key: 'note', width: 90 },
 ];
 
 function WarehousePage({ onBack }) {
@@ -594,8 +610,9 @@ function OrderLookup({ onBack, isAdmin }) {
           columns={orderColumns}
           dataSource={orders}
           rowKey="id"
+          rowClassName={orderRowClass}
           pagination={false}
-          scroll={{ x: 2150 }}
+          scroll={{ x: 1305 }}
           loading={loading}
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={searched ? 'Chưa có dữ liệu đơn hàng để đối chiếu.' : 'Nhập hình thẻ hoặc PO để bắt đầu tra cứu.'} /> }}
         />
@@ -612,7 +629,46 @@ export default function App() {
   const [draftLocation, setDraftLocation] = useState(location);
   const [editing, setEditing] = useState(false);
   const [page, setPage] = useState('home');
+  const [installPrompt, setInstallPrompt] = useState(null);
+  const [installHelpOpen, setInstallHelpOpen] = useState(false);
+  const [installLinkCopied, setInstallLinkCopied] = useState(false);
+  const installUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const month = `${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+
+  useEffect(() => {
+    const handleInstallPrompt = event => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const handleInstalled = () => setInstallPrompt(null);
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+    window.addEventListener('appinstalled', handleInstalled);
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+      window.removeEventListener('appinstalled', handleInstalled);
+    };
+  }, []);
+
+  async function installAndroidApp() {
+    if (!installPrompt) {
+      setInstallHelpOpen(true);
+      return;
+    }
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+  }
+
+  async function copyInstallLink() {
+    try {
+      await navigator.clipboard.writeText(installUrl);
+      setInstallLinkCopied(true);
+      window.setTimeout(() => setInstallLinkCopied(false), 1800);
+    } catch {
+      setInstallHelpOpen(true);
+    }
+  }
 
   useEffect(() => {
     const token = localStorage.getItem('gom_token');
@@ -676,9 +732,22 @@ export default function App() {
                 <Button className="menu-button" onClick={() => setPage('warehouse')}><MenuIcon>☑</MenuIcon>Kho hàng</Button>
                 <Button className="menu-button" onClick={() => setPage('lookup')}><MenuIcon>▧</MenuIcon>Tra cứu đơn hàng</Button>
               </nav>
+              <section className="install-section" aria-labelledby="install-title">
+                <div className="install-heading"><span>TẢI ỨNG DỤNG</span><strong id="install-title">Cài Chấm công lên điện thoại</strong></div>
+                <p className="install-description">Android có thể bấm nút tải app. iPhone/iPad mở bằng Safari, bấm Chia sẻ rồi chọn Thêm vào Màn hình chính.</p>
+                <div className="install-share-card">
+                  <div className="install-qr"><QRCode value={installUrl} size={108} bordered={false} /></div>
+                  <div className="install-share-copy"><strong>Mở trên thiết bị khác</strong><span>Quét mã QR để mở ứng dụng trên điện thoại.</span><a href={installUrl}>{installUrl}</a><Button type="link" onClick={copyInstallLink}>{installLinkCopied ? 'Đã sao chép đường dẫn' : 'Sao chép đường dẫn'}</Button></div>
+                </div>
+                <Button className="android-install-button" type="primary" onClick={installAndroidApp}>Tải app Android</Button>
+                <div className="install-ios-help">iOS: Safari → Chia sẻ → Thêm vào Màn hình chính</div>
+              </section>
             </>
           )}
         </div>}
+        <Modal title="Cài Chấm công trên Android" open={installHelpOpen} onCancel={() => setInstallHelpOpen(false)} footer={<Button type="primary" onClick={() => setInstallHelpOpen(false)}>Đã hiểu</Button>}>
+          <p>Mở trang này bằng Chrome, chạm menu ⋮ rồi chọn “Cài đặt ứng dụng” hoặc “Thêm vào Màn hình chính”.</p>
+        </Modal>
         <Modal title="Sửa địa điểm" open={editing} okText="Lưu" cancelText="Hủy" onOk={saveLocation} onCancel={() => setEditing(false)}>
           <Input value={draftLocation} onChange={event => setDraftLocation(event.target.value)} onPressEnter={saveLocation} autoFocus />
         </Modal>

@@ -54,6 +54,12 @@ function cellText(row, column) {
   // ExcelJS's `cell.text` can throw for merged cells whose master cell is blank.
   const value = cell.isMerged ? cell.master.value : cell.value;
   if (value == null) return '';
+  const excelDateText = date => `${String(date.getUTCDate()).padStart(2, '0')}/${String(date.getUTCMonth() + 1).padStart(2, '0')}/${date.getUTCFullYear()}`;
+  if (value instanceof Date) return excelDateText(value);
+  if (typeof value === 'number' && /[dmy]/i.test(cell.numFmt || '')) {
+    const excelDate = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+    if (!Number.isNaN(excelDate.getTime())) return excelDateText(excelDate);
+  }
   if (typeof value === 'object') {
     if (Array.isArray(value.richText)) return value.richText.map(part => part.text || '').join('').trim();
     if ('result' in value) return String(value.result ?? '').trim();
