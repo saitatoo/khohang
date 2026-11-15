@@ -46,6 +46,15 @@ button, input { font: inherit; }
 .android-install-button.ant-btn { width: 100%; height: 35px; margin-top: 10px; border: 0; border-radius: 9px; background: #318ed0; box-shadow: none; font-size: 11px; font-weight: 700; }
 .android-install-button.ant-btn:hover { background: #217fbe !important; }
 .install-ios-help { margin: 7px 1px 0; color: #4d5b50; font-size: 9px; font-weight: 600; }
+.permission-intro { margin: 0 0 12px; color: #687277; font-size: 12px; line-height: 1.5; }
+.permission-loading { display: grid; min-height: 72px; place-items: center; }
+.permission-user-list { display: grid; max-height: 56vh; gap: 7px; overflow-y: auto; }
+.permission-user { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px; border: 1px solid #e7ebe6; border-radius: 10px; background: #fff; }
+.permission-user-info { display: grid; min-width: 0; gap: 3px; }
+.permission-user-info strong { color: #3f474b; font-size: 12px; }
+.permission-user-info span { overflow: hidden; color: #7b8387; font-size: 10px; text-overflow: ellipsis; }
+.permission-admin-label { padding: 3px 8px; border-radius: 12px; color: #278640; background: #eff8f0; font-size: 10px; font-weight: 700; }
+.permission-user-controls { display: flex; flex: none; align-items: center; gap: 8px; }
 .attendance-frame-lookup { min-height: 100vh; padding: 10px 10px 16px; border-radius: 0 0 20px 20px; background: #fff; }
 .lookup-page { min-width: 0; }
 .lookup-heading-row { display: flex; align-items: center; gap: 4px; margin: 0 0 12px; }

@@ -33,6 +33,17 @@ export async function requireAdmin(req, res, next) {
   }
 }
 
+export async function requireWarehouseEditor(req, res, next) {
+  try {
+    const user = await User.findById(req.auth?.sub).select('email canManageWarehouse');
+    if (!user) return res.status(401).json({ message: 'Tài khoản không còn tồn tại.' });
+    if (user.canManageWarehouse) return next();
+    return res.status(403).json({ message: 'Bạn chưa được cấp quyền sửa kho hàng.' });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export function createToken(user) {
   const jwtSecret = getJwtSecret();
   if (!jwtSecret) throw new Error('JWT_SECRET phải được cấu hình khi chạy production.');

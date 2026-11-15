@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, QRCode, Spin, Table, Typography } from 'antd';
+import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, QRCode, Spin, Switch, Table, Typography } from 'antd';
 
 // The frontend and API share one origin on Vercel, so API requests use /api directly.
 const API_ROOT = '';
@@ -122,7 +122,7 @@ const orderColumns = [
   { title: 'Ghi chú', dataIndex: 'note', key: 'note', width: 90 },
 ];
 
-function WarehousePage({ onBack }) {
+function WarehousePage({ onBack, canEditWarehouse }) {
   const [warehouse, setWarehouse] = useState('Kho 2');
   const [shelves, setShelves] = useState([]);
   const [selectedShelfId, setSelectedShelfId] = useState('');
@@ -377,7 +377,7 @@ function WarehousePage({ onBack }) {
       const occupied = shelf.slots.some(slot => slot.position === position);
       return <i key={position} className={occupied ? 'occupied' : ''} />;
     })}</span></button>
-    <span className="warehouse-shelf-tools"><Button size="small" onClick={() => openEditShelf(shelf)}>Sửa</Button><Popconfirm title={`Xóa kệ ${shelf.code} và hàng trong kệ?`} okText="Xóa" cancelText="Hủy" onConfirm={() => deleteShelf(shelf)}><Button size="small" danger>Xóa</Button></Popconfirm></span>
+    {canEditWarehouse && <span className="warehouse-shelf-tools"><Button size="small" onClick={() => openEditShelf(shelf)}>Sửa</Button><Popconfirm title={`Xóa kệ ${shelf.code} và hàng trong kệ?`} okText="Xóa" cancelText="Hủy" onConfirm={() => deleteShelf(shelf)}><Button size="small" danger>Xóa</Button></Popconfirm></span>}
   </div>;
 
   return (
@@ -385,7 +385,7 @@ function WarehousePage({ onBack }) {
       <div className="lookup-heading-row">
         <Button className="back-button" type="text" onClick={onBack} aria-label="Quay lại">‹</Button>
         <Typography.Title level={4} className="lookup-title">Kho hàng</Typography.Title>
-        <Button className="warehouse-add-button" size="small" onClick={openNewShelf}>+ Thêm kệ</Button>
+        {canEditWarehouse && <Button className="warehouse-add-button" size="small" onClick={openNewShelf}>+ Thêm kệ</Button>}
       </div>
       <Input className="warehouse-search" value={query} onChange={event => handleSearch(event.target.value)} placeholder="Tìm mã hàng, tên hàng hoặc vị trí..." allowClear prefix={<SearchIcon />} />
       <div className="warehouse-tabs" role="tablist" aria-label="Chọn kho">
@@ -418,7 +418,7 @@ function WarehousePage({ onBack }) {
           {selectedPositions.length > 0 && <div className="warehouse-selection-actions">
             <span>Đã chọn <strong>{selectedPositions.length}</strong> ô: <strong>{selectedPositions.join(', ')}</strong></span>
             <Button onClick={() => setSelectedPositions([])}>Bỏ chọn</Button>
-            <Button type="primary" onClick={openOrderEditor}>{selectedPositions.some(position => selectedShelf.slots.some(slot => slot.position === position)) ? 'Sửa đơn hàng' : 'Nhập đơn hàng'}</Button>
+            {canEditWarehouse && <Button type="primary" onClick={openOrderEditor}>{selectedPositions.some(position => selectedShelf.slots.some(slot => slot.position === position)) ? 'Sửa đơn hàng' : 'Nhập đơn hàng'}</Button>}
           </div>}
           <div className="warehouse-rack" aria-label={`Sơ đồ kệ ${selectedShelf.code}`}>
             {Array.from({ length: selectedShelf.rows }, (_, level) => <div className="warehouse-rack-row" key={level} style={{ gridTemplateColumns: `repeat(${selectedShelf.columns}, minmax(0, 1fr))` }} aria-label={`Hàng ${level + 1}`}>
@@ -632,6 +632,11 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [installLinkCopied, setInstallLinkCopied] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [permissionUsers, setPermissionUsers] = useState([]);
+  const [permissionLoading, setPermissionLoading] = useState(false);
+  const [permissionError, setPermissionError] = useState('');
+  const [permissionSavingId, setPermissionSavingId] = useState('');
   const installUrl = typeof window !== 'undefined' ? window.location.origin : '';
   const month = `${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
 
@@ -667,6 +672,42 @@ export default function App() {
       window.setTimeout(() => setInstallLinkCopied(false), 1800);
     } catch {
       setInstallHelpOpen(true);
+    }
+  }
+
+  async function openPermissions() {
+    setPermissionsOpen(true);
+    setPermissionLoading(true);
+    setPermissionError('');
+    try {
+      const response = await fetch(`${API_ROOT}/api/users`, { headers: { Authorization: `Bearer ${localStorage.getItem('gom_token')}` } });
+      const result = await readApiJson(response);
+      if (!response.ok) throw new Error(result.message || 'Không tải được danh sách tài khoản.');
+      setPermissionUsers(result);
+    } catch (error) {
+      setPermissionError(error.message || 'Không tải được danh sách tài khoản.');
+    } finally {
+      setPermissionLoading(false);
+    }
+  }
+
+  async function updateWarehousePermission(member, canManageWarehouse) {
+    setPermissionSavingId(member.id);
+    setPermissionError('');
+    try {
+      const response = await fetch(`${API_ROOT}/api/users/${member.id}/warehouse-permission`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${localStorage.getItem('gom_token')}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canManageWarehouse }),
+      });
+      const result = await readApiJson(response);
+      if (!response.ok) throw new Error(result.message || 'Không cập nhật được quyền sửa kho.');
+      setPermissionUsers(current => current.map(user => user.id === result.id ? result : user));
+      if (user.id === result.id) setUser(current => ({ ...current, canManageWarehouse: result.canManageWarehouse }));
+    } catch (error) {
+      setPermissionError(error.message || 'Không cập nhật được quyền sửa kho.');
+    } finally {
+      setPermissionSavingId('');
     }
   }
 
@@ -707,7 +748,7 @@ export default function App() {
           <div className="attendance-frame auth-frame"><AuthScreen onAuthenticated={setUser} initialError={authError} /></div>
         ) : <div className={`attendance-frame ${page !== 'home' ? 'attendance-frame-lookup' : ''}`}>
           {page === 'warehouse' ? (
-            <WarehousePage onBack={() => setPage('home')} />
+            <WarehousePage onBack={() => setPage('home')} canEditWarehouse={Boolean(user.canManageWarehouse)} />
           ) : page === 'lookup' ? (
             <OrderLookup onBack={() => setPage('home')} isAdmin={Boolean(user.isAdmin)} />
           ) : (
@@ -731,6 +772,7 @@ export default function App() {
               <nav className="home-menu" aria-label="Chức năng">
                 <Button className="menu-button" onClick={() => setPage('warehouse')}><MenuIcon>☑</MenuIcon>Kho hàng</Button>
                 <Button className="menu-button" onClick={() => setPage('lookup')}><MenuIcon>▧</MenuIcon>Tra cứu đơn hàng</Button>
+                {user.isAdmin && <Button className="menu-button" onClick={openPermissions}><MenuIcon>⚙</MenuIcon>Phân quyền sửa kho</Button>}
               </nav>
               <section className="install-section" aria-labelledby="install-title">
                 <div className="install-heading"><span>TẢI ỨNG DỤNG</span><strong id="install-title">Cài Chấm công lên điện thoại</strong></div>
@@ -747,6 +789,16 @@ export default function App() {
         </div>}
         <Modal title="Cài Chấm công trên Android" open={installHelpOpen} onCancel={() => setInstallHelpOpen(false)} footer={<Button type="primary" onClick={() => setInstallHelpOpen(false)}>Đã hiểu</Button>}>
           <p>Mở trang này bằng Chrome, chạm menu ⋮ rồi chọn “Cài đặt ứng dụng” hoặc “Thêm vào Màn hình chính”.</p>
+        </Modal>
+        <Modal title="Phân quyền sửa kho hàng" open={permissionsOpen} onCancel={() => setPermissionsOpen(false)} footer={null} destroyOnClose>
+          <p className="permission-intro">Chỉ admin quản lý quyền này. Người được cấp chỉ có thể thêm, sửa hoặc xóa kệ và đơn hàng trong kho.</p>
+          {permissionError && <div className="auth-error lookup-error" role="alert">{permissionError}</div>}
+          {permissionLoading ? <div className="permission-loading"><Spin size="small" /></div> : <div className="permission-user-list">
+            {permissionUsers.map(member => <div className="permission-user" key={member.id}>
+              <div className="permission-user-info"><strong>{member.name}</strong><span>{member.email}</span></div>
+              <div className="permission-user-controls">{member.isAdmin && <span className="permission-admin-label">Admin</span>}<Switch checked={member.canManageWarehouse} checkedChildren="Có" unCheckedChildren="Không" loading={permissionSavingId === member.id} onChange={checked => updateWarehousePermission(member, checked)} /></div>
+            </div>)}
+          </div>}
         </Modal>
         <Modal title="Sửa địa điểm" open={editing} okText="Lưu" cancelText="Hủy" onOk={saveLocation} onCancel={() => setEditing(false)}>
           <Input value={draftLocation} onChange={event => setDraftLocation(event.target.value)} onPressEnter={saveLocation} autoFocus />

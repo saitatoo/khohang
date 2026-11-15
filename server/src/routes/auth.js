@@ -7,7 +7,13 @@ const router = Router();
 
 function publicUser(user) {
   const adminEmail = String(process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-  return { id: user.id, name: user.name, email: user.email, isAdmin: Boolean(adminEmail && user.email.toLowerCase() === adminEmail) };
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    isAdmin: Boolean(adminEmail && user.email.toLowerCase() === adminEmail),
+    canManageWarehouse: Boolean(user.canManageWarehouse),
+  };
 }
 
 router.post('/register', async (req, res, next) => {

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
-import { requireAuth } from '../middleware/requireAuth.js';
+import { requireAuth, requireWarehouseEditor } from '../middleware/requireAuth.js';
 import { WarehouseSetup, WarehouseShelf } from '../models/WarehouseShelf.js';
 
 const router = Router();
@@ -116,7 +116,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.post('/', async (req, res, next) => {
+router.post('/', requireWarehouseEditor, async (req, res, next) => {
   try {
     const { warehouse, code, rows, columns } = req.body || {};
     const normalizedCode = String(code || '').trim().toUpperCase();
@@ -134,7 +134,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.patch('/:id', async (req, res, next) => {
+router.patch('/:id', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findById(req.params.id);
@@ -161,7 +161,7 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findByIdAndDelete(req.params.id);
@@ -172,7 +172,7 @@ router.delete('/:id', async (req, res, next) => {
   }
 });
 
-router.put('/:id/orders', async (req, res, next) => {
+router.put('/:id/orders', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findById(req.params.id);
@@ -221,7 +221,7 @@ router.put('/:id/orders', async (req, res, next) => {
   }
 });
 
-router.delete('/:id/orders/:allocationId', async (req, res, next) => {
+router.delete('/:id/orders/:allocationId', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findByIdAndUpdate(req.params.id, {
@@ -234,7 +234,7 @@ router.delete('/:id/orders/:allocationId', async (req, res, next) => {
   }
 });
 
-router.put('/:id/slots/:position', async (req, res, next) => {
+router.put('/:id/slots/:position', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findById(req.params.id);
@@ -273,7 +273,7 @@ router.put('/:id/slots/:position', async (req, res, next) => {
   }
 });
 
-router.delete('/:id/slots/:position', async (req, res, next) => {
+router.delete('/:id/slots/:position', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
     const shelf = await WarehouseShelf.findByIdAndUpdate(req.params.id, {

@@ -8,6 +8,7 @@ import authRoutes from './routes/auth.js';
 import itemRoutes from './routes/items.js';
 import orderRoutes from './routes/orders.js';
 import warehouseRoutes from './routes/warehouses.js';
+import userRoutes from './routes/users.js';
 
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../.env') });
 
@@ -34,6 +35,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/items', itemRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/users', userRoutes);
 app.use((err, _req, res, _next) => {
   console.error(err);
   res.status(err.status || 500).json({ message: err.message || 'Internal server error' });
