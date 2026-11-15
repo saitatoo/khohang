@@ -121,12 +121,38 @@ function WarehousePage({ onBack }) {
   const [editingExistingOrder, setEditingExistingOrder] = useState(false);
   const [shelfForm, setShelfForm] = useState({ code: '', rows: '2', columns: '8' });
   const [slotForm, setSlotForm] = useState({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
+  const [slotOrderResults, setSlotOrderResults] = useState([]);
+  const [selectedCatalogOrder, setSelectedCatalogOrder] = useState(null);
+  const [slotSearchBusy, setSlotSearchBusy] = useState(false);
+  const [slotSearchError, setSlotSearchError] = useState('');
   const token = () => localStorage.getItem('gom_token');
   const selectedShelf = shelves.find(item => item._id === selectedShelfId) || shelves[0];
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const positionCode = (level, position) => `R${level + 1}-C${String(position + 1).padStart(2, '0')}`;
   const matchesShelf = shelf => normalizedQuery && `${shelf.code} ${shelf.slots.map(slot => `${slot.position} ${slot.orderNo} ${slot.po} ${slot.style} ${slot.itemCode} ${slot.itemName} ${slot.supplier}`).join(' ')}`.toLocaleLowerCase().includes(normalizedQuery);
   const matchesSlot = (shelf, position, slot) => normalizedQuery && `${shelf.code}-${position} ${slot?.orderNo || ''} ${slot?.po || ''} ${slot?.style || ''} ${slot?.itemCode || ''} ${slot?.itemName || ''} ${slot?.supplier || ''}`.toLocaleLowerCase().includes(normalizedQuery);
+  const searchResults = normalizedQuery ? shelves.flatMap(shelf => {
+    const matchingSlots = shelf.slots.filter(slot => matchesSlot(shelf, slot.position, slot));
+    const groups = new Map();
+    matchingSlots.forEach(slot => {
+      const orderKey = slot.allocationId || `${slot.orderNo}|${slot.po}|${slot.style}|${slot.itemCode}`;
+      if (!groups.has(orderKey)) {
+        const orderSlots = slot.allocationId
+          ? shelf.slots.filter(candidate => candidate.allocationId === slot.allocationId)
+          : shelf.slots.filter(candidate => `${candidate.orderNo}|${candidate.po}|${candidate.style}|${candidate.itemCode}` === orderKey);
+        groups.set(orderKey, { shelf, slot, positions: orderSlots.map(item => item.position) });
+      }
+    });
+    return [...groups.values()];
+  }) : [];
+  const selectedOrderGroups = selectedShelf ? [...selectedShelf.slots
+    .filter(slot => selectedPositions.includes(slot.position))
+    .reduce((groups, slot) => {
+      const key = slot.allocationId || `${slot.orderNo}|${slot.po}|${slot.style}|${slot.itemCode}`;
+      if (!groups.has(key)) groups.set(key, { ...slot, positions: [] });
+      groups.get(key).positions.push(slot.position);
+      return groups;
+    }, new Map()).values()] : [];
 
   async function loadShelves(currentWarehouse = warehouse) {
     setLoading(true);
@@ -191,6 +217,9 @@ function WarehousePage({ onBack }) {
     setActiveAllocationId(sameOrderId);
     setEditingExistingOrder(Boolean(order));
     setSlotForm({ orderNo: order?.orderNo || '', po: order?.po || '', style: order?.style || '', itemCode: order?.itemCode || '', etd: order?.etd || '', supplier: order?.supplier || '', quantity: String(order?.quantity ?? 0), note: order?.note || '' });
+    setSlotOrderResults([]);
+    setSelectedCatalogOrder(order || null);
+    setSlotSearchError('');
     setDialog('slot');
   }
 
@@ -232,6 +261,10 @@ function WarehousePage({ onBack }) {
 
   async function saveSlot(event) {
     event.preventDefault();
+    if (!editingExistingOrder && !selectedCatalogOrder) {
+      setSlotSearchError('Hãy tìm và chọn đơn hàng từ danh sách trước khi lưu.');
+      return;
+    }
     setSaving(true);
     setError('');
     try {
@@ -251,6 +284,49 @@ function WarehousePage({ onBack }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function searchOrdersForSlot() {
+    const params = new URLSearchParams();
+    if (slotForm.po.trim()) params.set('po', slotForm.po.trim());
+    if (slotForm.style.trim()) params.set('style', slotForm.style.trim());
+    if (!params.size) {
+      setSlotOrderResults([]);
+      setSelectedCatalogOrder(null);
+      setSlotSearchError('Nhập PO hoặc Hình thể để tìm đơn hàng.');
+      return;
+    }
+    setSlotSearchBusy(true);
+    setSlotSearchError('');
+    setSelectedCatalogOrder(null);
+    try {
+      const response = await fetch(`${API_ROOT}/api/orders?${params}`, { headers: { Authorization: `Bearer ${token()}` } });
+      const result = await readApiJson(response);
+      if (!response.ok) throw new Error(result.message || 'Không tìm được đơn hàng.');
+      setSlotOrderResults(result.orders || []);
+      if (!result.orders?.length) setSlotSearchError('Không tìm thấy đơn hàng khớp với PO hoặc Hình thể này.');
+    } catch (requestError) {
+      setSlotOrderResults([]);
+      setSlotSearchError(requestError.message || 'Không tìm được đơn hàng.');
+    } finally {
+      setSlotSearchBusy(false);
+    }
+  }
+
+  function chooseCatalogOrder(order) {
+    setSelectedCatalogOrder(order);
+    setSlotSearchError('');
+    const importedQuantity = String(order.quantity ?? '0').replace(/[\s,]/g, '');
+    setSlotForm(current => ({
+      ...current,
+      orderNo: order.orderNo || '',
+      po: order.po || '',
+      style: order.style || '',
+      itemCode: order.itemCode || '',
+      etd: order.etd || '',
+      supplier: order.supplier || '',
+      quantity: importedQuantity || '0',
+    }));
   }
 
   async function deleteSelectedOrder() {
@@ -280,7 +356,11 @@ function WarehousePage({ onBack }) {
     if (match && match._id !== selectedShelfId) { setSelectedShelfId(match._id); setSelectedPositions([]); }
   };
   const renderShelfCard = shelf => <div key={shelf._id} className={`warehouse-aisle-card${selectedShelf?._id === shelf._id ? ' active' : ''}${matchesShelf(shelf) ? ' match' : ''}`}>
-    <button type="button" className="warehouse-shelf-select" onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}><span className="warehouse-aisle-name">{shelf.code}</span><span className="warehouse-capacity">{shelf.rows * shelf.columns} ô</span><span className="warehouse-aisle-mark" style={{ gridTemplateColumns: `repeat(${shelf.rows * shelf.columns}, minmax(0, 1fr))` }} aria-hidden="true">{Array.from({ length: shelf.rows * shelf.columns }, (_, index) => <i key={index} />)}</span></button>
+    <button type="button" className="warehouse-shelf-select" onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}><span className="warehouse-aisle-name">{shelf.code}</span><span className="warehouse-capacity">{shelf.rows * shelf.columns} ô</span><span className="warehouse-aisle-mark" style={{ gridTemplateColumns: `repeat(${shelf.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${shelf.rows}, minmax(0, 1fr))` }} aria-hidden="true">{Array.from({ length: shelf.rows * shelf.columns }, (_, index) => {
+      const position = positionCode(Math.floor(index / shelf.columns), index % shelf.columns);
+      const occupied = shelf.slots.some(slot => slot.position === position);
+      return <i key={position} className={occupied ? 'occupied' : ''} />;
+    })}</span></button>
     <span className="warehouse-shelf-tools"><Button size="small" onClick={() => openEditShelf(shelf)}>Sửa</Button><Popconfirm title={`Xóa kệ ${shelf.code} và hàng trong kệ?`} okText="Xóa" cancelText="Hủy" onConfirm={() => deleteShelf(shelf)}><Button size="small" danger>Xóa</Button></Popconfirm></span>
   </div>;
 
@@ -295,17 +375,32 @@ function WarehousePage({ onBack }) {
       <div className="warehouse-tabs" role="tablist" aria-label="Chọn kho">
         {['Kho 1', 'Kho 2'].map(name => <Button key={name} role="tab" aria-selected={warehouse === name} className={warehouse === name ? 'warehouse-tab active' : 'warehouse-tab'} onClick={() => changeWarehouse(name)}>{name}</Button>)}
       </div>
+      {normalizedQuery && <div className="warehouse-search-results" aria-live="polite">
+        {searchResults.length ? <>
+          <div className="warehouse-search-results-title">Tìm thấy {searchResults.length} đơn hàng</div>
+          {searchResults.map(({ shelf, slot, positions }) => <button type="button" className="warehouse-search-result" key={`${shelf._id}-${slot.allocationId || slot.orderNo || slot.po}-${slot.style}`} onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}>
+            <span><strong>{slot.po || slot.orderNo || slot.style || slot.itemCode}</strong>{slot.style && slot.po && <small> · {slot.style}</small>}<small> · SL {slot.quantity ?? 0}</small></span>
+            <span className="warehouse-search-result-location">{shelf.code} · {positions.join(', ')}</span>
+          </button>)}
+        </> : <div className="warehouse-search-empty">Không tìm thấy đơn hàng hoặc vị trí phù hợp trong kho này.</div>}
+      </div>}
       {error && <div className="auth-error lookup-error" role="alert">{error}</div>}
       <div className="warehouse-map">
-        <div className="warehouse-door-label">Cửa ra vào</div>
-        <div className="warehouse-main-aisles">
-          {shelves.slice(0, 2).map(renderShelfCard)}
-        </div>
+        {warehouse === 'Kho 1' ? <div className="warehouse-layout-kho1">
+          <div className="warehouse-layout-kho1-top">
+            {shelves.slice(0, 4).map(renderShelfCard)}
+            <div className="warehouse-door-label">Cửa ra vào</div>
+          </div>
+          {shelves.length > 4 && <div className="warehouse-layout-kho1-bottom">{shelves.slice(4).map(renderShelfCard)}</div>}
+        </div> : <>
+          <div className="warehouse-door-label">Cửa ra vào</div>
+          <div className="warehouse-main-aisles">{shelves.slice(0, 2).map(renderShelfCard)}</div>
+        </>}
         {loading ? <div className="warehouse-loading"><Spin size="small" /> Đang tải kệ...</div> : selectedShelf ? <>
           <div className="warehouse-rack-title">Sơ đồ kệ <strong>{selectedShelf.code}</strong></div>
           <div className="warehouse-slot-hint">Chọn một hoặc nhiều ô để xếp cùng một đơn hàng vào các vị trí đó.</div>
           {selectedPositions.length > 0 && <div className="warehouse-selection-actions">
-            <span>Đã chọn <strong>{selectedPositions.length}</strong> ô</span>
+            <span>Đã chọn <strong>{selectedPositions.length}</strong> ô: <strong>{selectedPositions.join(', ')}</strong></span>
             <Button onClick={() => setSelectedPositions([])}>Bỏ chọn</Button>
             <Button type="primary" onClick={openOrderEditor}>{selectedPositions.some(position => selectedShelf.slots.some(slot => slot.position === position)) ? 'Sửa đơn hàng' : 'Nhập đơn hàng'}</Button>
           </div>}
@@ -318,9 +413,16 @@ function WarehousePage({ onBack }) {
               })}
             </div>)}
           </div>
+          {selectedPositions.length > 0 && <div className="warehouse-selected-orders">
+            <strong className="warehouse-selected-orders-title">Đơn hàng trong ô đang chọn</strong>
+            {selectedOrderGroups.length ? selectedOrderGroups.map((order, index) => <div className="warehouse-selected-order" key={order.allocationId || `${order.orderNo}-${order.po}-${order.style}-${index}`}>
+              <span><strong>{order.po || order.orderNo || order.style || order.itemCode}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity ?? 0}</small></span>
+              <span className="warehouse-selected-order-positions">{order.positions.join(', ')}</span>
+            </div>) : <div className="warehouse-selected-order-empty">Các ô đang chọn hiện chưa có đơn hàng.</div>}
+          </div>}
           {selectedShelf.slots.length > 0 && <div className="warehouse-stock-summary">Đang lưu {selectedShelf.slots.length} ô có hàng</div>}
         </> : !loading && <div className="warehouse-empty">Chưa có kệ. Nhấn “+ Thêm kệ” để tạo kệ đầu tiên.</div>}
-        {!loading && shelves.length > 2 && <div className="warehouse-bottom-shelves">{shelves.slice(2).map(renderShelfCard)}</div>}
+        {warehouse !== 'Kho 1' && !loading && shelves.length > 2 && <div className="warehouse-bottom-shelves">{shelves.slice(2).map(renderShelfCard)}</div>}
       </div>
 
       <Modal title={editingShelfId ? 'Sửa kệ hàng' : 'Thêm kệ hàng'} open={dialog === 'shelf'} onCancel={() => setDialog('')} footer={null} destroyOnClose>
@@ -336,13 +438,18 @@ function WarehousePage({ onBack }) {
       </Modal>
       <Modal title={`${editingExistingOrder ? 'Sửa đơn hàng' : 'Nhập đơn hàng'} ${selectedShelf?.code || ''} · ${selectedPositions.length} ô`} open={dialog === 'slot'} onCancel={() => setDialog('')} footer={null} destroyOnClose>
         <form className="warehouse-form" onSubmit={saveSlot}>
-          <label>Số chỉ lệnh<Input value={slotForm.orderNo} onChange={event => setSlotForm({ ...slotForm, orderNo: event.target.value })} /></label>
-          <label>PO<Input value={slotForm.po} onChange={event => setSlotForm({ ...slotForm, po: event.target.value })} /></label>
-          <label>Hình thể / Style<Input value={slotForm.style} onChange={event => setSlotForm({ ...slotForm, style: event.target.value })} /></label>
-          <label>Mã hàng<Input value={slotForm.itemCode} onChange={event => setSlotForm({ ...slotForm, itemCode: event.target.value })} /></label>
+          <label>PO<Input value={slotForm.po} onChange={event => { setSlotForm(current => ({ ...current, po: event.target.value })); setSelectedCatalogOrder(null); setSlotOrderResults([]); }} /></label>
+          <label>Hình thể / Style<Input value={slotForm.style} onChange={event => { setSlotForm(current => ({ ...current, style: event.target.value })); setSelectedCatalogOrder(null); setSlotOrderResults([]); }} /></label>
+          <Button className="warehouse-order-search-button" htmlType="button" onClick={searchOrdersForSlot} loading={slotSearchBusy}>Tìm đơn hàng</Button>
+          {slotSearchError && <div className="auth-error" role="alert">{slotSearchError}</div>}
+          {selectedCatalogOrder && <div className="warehouse-order-selected"><strong>Đã chọn:</strong> {selectedCatalogOrder.po} · {selectedCatalogOrder.style} · SL đơn {selectedCatalogOrder.quantity}</div>}
+          {slotOrderResults.length > 0 && <div className="warehouse-order-results">
+            {slotOrderResults.map((order, index) => <button key={order.id || `${order.po}-${order.style}-${index}`} type="button" className="warehouse-order-result" onClick={() => chooseCatalogOrder(order)}>
+              <strong>PO {order.po || '—'} · Hình thể {order.style || '—'}</strong>
+              <span>Số chỉ lệnh {order.orderNo || '—'} · SL đơn {order.quantity || '0'}</span>
+            </button>)}
+          </div>}
           <label>Số lượng đơn hàng<Input type="number" min="0" value={slotForm.quantity} onChange={event => setSlotForm({ ...slotForm, quantity: event.target.value })} required /></label>
-          <label>Ngày giao / ETD<Input value={slotForm.etd} onChange={event => setSlotForm({ ...slotForm, etd: event.target.value })} /></label>
-          <label>Nhà cung cấp<Input value={slotForm.supplier} onChange={event => setSlotForm({ ...slotForm, supplier: event.target.value })} /></label>
           <label>Ghi chú<Input.TextArea rows={3} value={slotForm.note} onChange={event => setSlotForm({ ...slotForm, note: event.target.value })} /></label>
           {error && <div className="auth-error" role="alert">{error}</div>}
           <div className="warehouse-form-actions">

@@ -12,9 +12,9 @@ async function initializeDefaultShelves() {
   if (!await WarehouseSetup.exists({ _id: seedId }) && !await WarehouseShelf.exists({})) {
     try {
       await WarehouseShelf.insertMany([
-        { warehouse: 'Kho 1', code: 'K11', rows: 2, columns: 8, sortOrder: 1 },
-        { warehouse: 'Kho 1', code: 'K12', rows: 2, columns: 8, sortOrder: 2 },
-        { warehouse: 'Kho 1', code: 'K13', rows: 2, columns: 20, sortOrder: 3 },
+        { warehouse: 'Kho 1', code: 'K01', rows: 2, columns: 8, sortOrder: 1 },
+        { warehouse: 'Kho 1', code: 'K02', rows: 2, columns: 8, sortOrder: 2 },
+        { warehouse: 'Kho 1', code: 'K03', rows: 2, columns: 20, sortOrder: 3 },
         { warehouse: 'Kho 2', code: 'K01', rows: 2, columns: 8, sortOrder: 1 },
         { warehouse: 'Kho 2', code: 'K02', rows: 2, columns: 8, sortOrder: 2 },
         { warehouse: 'Kho 2', code: 'K03', rows: 2, columns: 20, sortOrder: 3 },
@@ -24,6 +24,30 @@ async function initializeDefaultShelves() {
     }
   }
   await WarehouseSetup.updateOne({ _id: seedId }, { $setOnInsert: { initializedAt: new Date() } }, { upsert: true });
+
+  // The previous Kho 1 defaults were K11-K13. Reuse those seeded shelves as
+  // K01-K03 when they are the only shelves, keeping any stored orders intact.
+  const hasKho1NumberedShelves = await WarehouseShelf.exists({ warehouse: 'Kho 1', code: /^K0[1-9]$/ });
+  const legacyKho1Shelves = await WarehouseShelf.find({ warehouse: 'Kho 1', code: { $in: ['K11', 'K12', 'K13'] } }).select('code').lean();
+  if (!hasKho1NumberedShelves && legacyKho1Shelves.length === 3) {
+    for (const [oldCode, newCode, sortOrder] of [['K11', 'K01', 1], ['K12', 'K02', 2], ['K13', 'K03', 3]]) {
+      await WarehouseShelf.updateOne(
+        { warehouse: 'Kho 1', code: oldCode },
+        { $set: { code: newCode, sortOrder } },
+      );
+    }
+  }
+
+  // Kho 1 has twelve fixed default shelves. Upserts keep this safe to run
+  // whenever the warehouse list is requested and preserve existing shelf data.
+  for (let index = 1; index <= 12; index += 1) {
+    const code = `K${String(index).padStart(2, '0')}`;
+    await WarehouseShelf.updateOne(
+      { warehouse: 'Kho 1', code },
+      { $set: { sortOrder: index }, $setOnInsert: { rows: 2, columns: 8 } },
+      { upsert: true },
+    );
+  }
 
   const layoutId = 'default-shelf-layout-v2';
   if (await WarehouseSetup.exists({ _id: layoutId })) return;
