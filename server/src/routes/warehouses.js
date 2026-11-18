@@ -172,6 +172,38 @@ router.delete('/:id', requireWarehouseEditor, async (req, res, next) => {
   }
 });
 
+router.put('/:id/orders/move', requireWarehouseEditor, async (req, res, next) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
+    const shelf = await WarehouseShelf.findById(req.params.id);
+    if (!shelf) return res.status(404).json({ message: 'Không tìm thấy kệ.' });
+    const fromPosition = String(req.body?.fromPosition || '').toUpperCase();
+    const toPosition = String(req.body?.toPosition || '').toUpperCase();
+    for (const value of [fromPosition, toPosition]) {
+      const parsed = parsePosition(value);
+      if (!parsed || parsed.row > shelf.rows || parsed.column > shelf.columns) {
+        return res.status(400).json({ message: `Vị trí ${value} không thuộc kệ này.` });
+      }
+    }
+    if (fromPosition === toPosition) return res.status(400).json({ message: 'Ô đích phải khác ô nguồn.' });
+    const allocationId = String(req.body?.allocationId || '');
+    const matchesOrder = slot => allocationId
+      ? slot.allocationId === allocationId
+      : !slot.allocationId
+        && slot.orderNo === String(req.body?.orderNo || '')
+        && slot.po === String(req.body?.po || '')
+        && slot.style === String(req.body?.style || '')
+        && slot.itemCode === String(req.body?.itemCode || '');
+    const sourceSlot = shelf.slots.find(slot => slot.position === fromPosition && matchesOrder(slot));
+    if (!sourceSlot) return res.status(404).json({ message: 'Không tìm thấy đơn trong ô nguồn.' });
+    sourceSlot.position = toPosition;
+    await shelf.save();
+    res.json(shelf);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.put('/:id/orders', requireWarehouseEditor, async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Mã kệ không hợp lệ.' });
@@ -187,7 +219,38 @@ router.put('/:id/orders', requireWarehouseEditor, async (req, res, next) => {
     }
     const allocationId = String(req.body?.allocationId || '');
     const append = req.body?.append === true;
-    if (append && positions.length !== 1) return res.status(400).json({ message: 'Chỉ có thể thêm một đơn vào một ô mỗi lần.' });
+    if (append && positions.length !== 1) return res.status(400).json({ message: 'Thêm nhiều đơn chỉ hỗ trợ một ô mỗi lần.' });
+    if (append) {
+      const orders = Array.isArray(req.body?.orders) ? req.body.orders : [req.body];
+      if (!orders.length) return res.status(400).json({ message: 'Thêm ít nhất một đơn vào danh sách.' });
+      const orderSlots = [];
+      for (const order of orders) {
+        const orderNo = String(order?.orderNo || '').trim();
+        const po = String(order?.po || '').trim();
+        const style = String(order?.style || '').trim();
+        const itemCode = String(order?.itemCode || '').trim();
+        const quantity = Number(order?.quantity);
+        if (!orderNo && !po && !style) return res.status(400).json({ message: 'Mỗi đơn cần có số chỉ lệnh, PO hoặc hình thể.' });
+        if (!Number.isFinite(quantity) || quantity < 0) return res.status(400).json({ message: 'Số lượng mỗi đơn phải từ 0 trở lên.' });
+        orderSlots.push({
+          position: positions[0],
+          allocationId: randomUUID(),
+          orderNo,
+          po,
+          style,
+          itemCode,
+          itemName: '',
+          etd: String(order?.etd || '').trim(),
+          supplier: String(order?.supplier || '').trim(),
+          quantity,
+          note: String(order?.note || '').trim(),
+          updatedAt: new Date(),
+        });
+      }
+      shelf.slots.push(...orderSlots);
+      await shelf.save();
+      return res.json(shelf);
+    }
     const orderNo = String(req.body?.orderNo || '').trim();
     const po = String(req.body?.po || '').trim();
     const style = String(req.body?.style || '').trim();

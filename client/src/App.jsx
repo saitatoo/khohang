@@ -138,9 +138,13 @@ function WarehousePage({ onBack, canEditWarehouse }) {
   const [activeAllocationId, setActiveAllocationId] = useState('');
   const [editingExistingOrder, setEditingExistingOrder] = useState(false);
   const [addingOrderToOccupiedSlot, setAddingOrderToOccupiedSlot] = useState(false);
+  const [batchOrderEntry, setBatchOrderEntry] = useState(false);
+  const [movingOrder, setMovingOrder] = useState(null);
+  const [movingFromPosition, setMovingFromPosition] = useState('');
   const [shelfForm, setShelfForm] = useState({ code: '', rows: '2', columns: '8' });
   const [slotForm, setSlotForm] = useState({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
   const [slotOrderResults, setSlotOrderResults] = useState([]);
+  const [pendingSlotOrders, setPendingSlotOrders] = useState([]);
   const [selectedCatalogOrder, setSelectedCatalogOrder] = useState(null);
   const [slotSearchBusy, setSlotSearchBusy] = useState(false);
   const [slotSearchError, setSlotSearchError] = useState('');
@@ -239,6 +243,8 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     }
     setError('');
     setAddingOrderToOccupiedSlot(false);
+    setBatchOrderEntry(!order && selectedPositions.length === 1);
+    setPendingSlotOrders([]);
     setActiveAllocationId(sameOrderId);
     setEditingExistingOrder(Boolean(order));
     setSlotForm({ orderNo: order?.orderNo || '', po: order?.po || '', style: order?.style || '', itemCode: order?.itemCode || '', etd: order?.etd || '', supplier: order?.supplier || '', quantity: String(order?.quantity ?? 0), note: order?.note || '' });
@@ -254,6 +260,8 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     setActiveAllocationId('');
     setEditingExistingOrder(false);
     setAddingOrderToOccupiedSlot(true);
+    setBatchOrderEntry(true);
+    setPendingSlotOrders([]);
     setSlotForm({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
     setSlotOrderResults([]);
     setSelectedCatalogOrder(null);
@@ -265,6 +273,8 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     setSelectedPositions([...new Set(order.positions)]);
     setError('');
     setAddingOrderToOccupiedSlot(false);
+    setBatchOrderEntry(false);
+    setPendingSlotOrders([]);
     setActiveAllocationId(order.allocationId || '');
     setEditingExistingOrder(true);
     setSlotForm({ orderNo: order.orderNo || '', po: order.po || '', style: order.style || '', itemCode: order.itemCode || '', etd: order.etd || '', supplier: order.supplier || '', quantity: String(order.quantity ?? 0), note: order.note || '' });
@@ -272,6 +282,83 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     setSelectedCatalogOrder(order);
     setSlotSearchError('');
     setDialog('slot');
+  }
+
+  function addSelectedOrderToBatch() {
+    if (!selectedCatalogOrder) {
+      setSlotSearchError('Hãy tìm và chọn đơn hàng trước.');
+      return;
+    }
+    const quantity = Number(slotForm.quantity);
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      setSlotSearchError('Số lượng đơn phải từ 0 trở lên.');
+      return;
+    }
+    const order = {
+      orderNo: slotForm.orderNo,
+      po: slotForm.po,
+      style: slotForm.style,
+      itemCode: slotForm.itemCode,
+      etd: slotForm.etd,
+      supplier: slotForm.supplier,
+      quantity,
+      note: slotForm.note,
+      sourceId: selectedCatalogOrder.id || `${slotForm.orderNo}|${slotForm.po}|${slotForm.style}`,
+    };
+    if (pendingSlotOrders.some(item => item.sourceId === order.sourceId)) {
+      setSlotSearchError('Đơn hàng này đã có trong danh sách.');
+      return;
+    }
+    setPendingSlotOrders(current => [...current, order]);
+    setSlotForm({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
+    setSlotOrderResults([]);
+    setSelectedCatalogOrder(null);
+    setSlotSearchError('');
+  }
+
+  function startMovingOrder(order) {
+    if (selectedPositions.length !== 1 || !selectedShelf) {
+      setError('Hãy chọn riêng một ô nguồn trước khi chuyển đơn.');
+      return;
+    }
+    setError('');
+    setMovingOrder(order);
+    setMovingFromPosition(selectedPositions[0]);
+  }
+
+  async function moveOrderToPosition(destinationPosition) {
+    if (!movingOrder || !selectedShelf || !movingFromPosition) return;
+    if (destinationPosition === movingFromPosition) {
+      setError('Hãy chọn một ô đích khác ô nguồn.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const response = await fetch(`${API_ROOT}/api/warehouses/${selectedShelf._id}/orders/move`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fromPosition: movingFromPosition,
+          toPosition: destinationPosition,
+          allocationId: movingOrder.allocationId || '',
+          orderNo: movingOrder.orderNo || '',
+          po: movingOrder.po || '',
+          style: movingOrder.style || '',
+          itemCode: movingOrder.itemCode || '',
+        }),
+      });
+      const result = await readApiJson(response);
+      if (!response.ok) throw new Error(result.message || 'Không chuyển được đơn sang ô mới.');
+      setMovingOrder(null);
+      setMovingFromPosition('');
+      setSelectedPositions([destinationPosition]);
+      await loadShelves();
+    } catch (requestError) {
+      setError(requestError.message || 'Không chuyển được đơn sang ô mới.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function saveShelf(event) {
@@ -312,7 +399,11 @@ function WarehousePage({ onBack, canEditWarehouse }) {
 
   async function saveSlot(event) {
     event.preventDefault();
-    if (!editingExistingOrder && !selectedCatalogOrder) {
+    if (batchOrderEntry && !pendingSlotOrders.length) {
+      setSlotSearchError('Hãy chọn và thêm ít nhất một đơn vào danh sách.');
+      return;
+    }
+    if (!batchOrderEntry && !editingExistingOrder && !selectedCatalogOrder) {
       setSlotSearchError('Hãy tìm và chọn đơn hàng từ danh sách trước khi lưu.');
       return;
     }
@@ -322,13 +413,14 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       const response = await fetch(`${API_ROOT}/api/warehouses/${selectedShelf._id}/orders`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...slotForm, quantity: Number(slotForm.quantity), positions: selectedPositions, allocationId: activeAllocationId, append: addingOrderToOccupiedSlot }),
+        body: JSON.stringify({ ...slotForm, quantity: Number(slotForm.quantity), positions: selectedPositions, allocationId: activeAllocationId, append: batchOrderEntry, orders: batchOrderEntry ? pendingSlotOrders : undefined }),
       });
       const result = await readApiJson(response);
       if (!response.ok) throw new Error(result.message || 'Không lưu được hàng trong ô.');
       setDialog('');
       setSelectedPositions([]);
       setActiveAllocationId('');
+      setPendingSlotOrders([]);
       await loadShelves();
     } catch (requestError) {
       setError(requestError.message || 'Không lưu được hàng trong ô.');
@@ -400,14 +492,14 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     }
   }
 
-  const changeWarehouse = name => { setQuery(''); setSelectedShelfId(''); setSelectedPositions([]); setWarehouse(name); };
+  const changeWarehouse = name => { setQuery(''); setSelectedShelfId(''); setSelectedPositions([]); setMovingOrder(null); setMovingFromPosition(''); setWarehouse(name); };
   const handleSearch = value => {
     setQuery(value);
     const match = shelves.find(matchesShelf);
-    if (match && match._id !== selectedShelfId) { setSelectedShelfId(match._id); setSelectedPositions([]); }
+    if (match && match._id !== selectedShelfId) { setSelectedShelfId(match._id); setSelectedPositions([]); setMovingOrder(null); setMovingFromPosition(''); }
   };
-  const renderShelfCard = shelf => <div key={shelf._id} className={`warehouse-aisle-card${selectedShelf?._id === shelf._id ? ' active' : ''}${matchesShelf(shelf) ? ' match' : ''}`}>
-    <button type="button" className="warehouse-shelf-select" onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}><span className="warehouse-aisle-name">{shelf.code}</span><span className="warehouse-capacity">{shelf.rows * shelf.columns} ô</span><span className="warehouse-aisle-mark" style={{ gridTemplateColumns: `repeat(${shelf.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${shelf.rows}, minmax(0, 1fr))` }} aria-hidden="true">{Array.from({ length: shelf.rows * shelf.columns }, (_, index) => {
+  const renderShelfCard = (shelf, layoutClass = '') => <div key={shelf._id} className={`warehouse-aisle-card${selectedShelf?._id === shelf._id ? ' active' : ''}${matchesShelf(shelf) ? ' match' : ''}${layoutClass ? ` ${layoutClass}` : ''}`}>
+    <button type="button" className="warehouse-shelf-select" onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); setMovingOrder(null); setMovingFromPosition(''); }}><span className="warehouse-aisle-name">{shelf.code}</span><span className="warehouse-capacity">{shelf.rows * shelf.columns} ô</span><span className="warehouse-aisle-mark" style={{ gridTemplateColumns: `repeat(${shelf.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${shelf.rows}, minmax(0, 1fr))` }} aria-hidden="true">{Array.from({ length: shelf.rows * shelf.columns }, (_, index) => {
       const position = positionCode(Math.floor(index / shelf.columns), index % shelf.columns);
       const slotOrders = shelf.slots.filter(slot => slot.position === position);
       const occupied = slotOrders.length > 0;
@@ -431,29 +523,31 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       {normalizedQuery && <div className="warehouse-search-results" aria-live="polite">
         {searchResults.length ? <>
           <div className="warehouse-search-results-title">Tìm thấy {searchResults.length} đơn hàng</div>
-          {searchResults.map(({ shelf, slot, positions }) => <button type="button" className="warehouse-search-result" key={`${shelf._id}-${slot.allocationId || slot.orderNo || slot.po}-${slot.style}`} onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}>
+          {searchResults.map(({ shelf, slot, positions }) => <button type="button" className="warehouse-search-result" key={`${shelf._id}-${slot.allocationId || slot.orderNo || slot.po}-${slot.style}`} onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); setMovingOrder(null); setMovingFromPosition(''); }}>
             <span><strong>{slot.po || slot.orderNo || slot.style || slot.itemCode}</strong>{slot.style && slot.po && <small> · {slot.style}</small>}<small> · SL {slot.quantity ?? 0}</small></span>
             <span className="warehouse-search-result-location">{shelf.code} · {positions.join(', ')}</span>
           </button>)}
         </> : <div className="warehouse-search-empty">Không tìm thấy đơn hàng hoặc vị trí phù hợp trong kho này.</div>}
       </div>}
       {error && <div className="auth-error lookup-error" role="alert">{error}</div>}
-      <div className="warehouse-map">
+      <div className={`warehouse-map${loading ? ' loading' : ''}`}>
         {warehouse === 'Kho 1' ? <div className="warehouse-layout-kho1">
           <div className="warehouse-layout-kho1-top">
             {kho1TopShelves.map((shelf, index) => <Fragment key={shelf._id}>
-              {renderShelfCard(shelf)}
-              {index === 1 && kho1SideShelves[0] && renderShelfCard(kho1SideShelves[0])}
-              {index === 2 && kho1SideShelves[1] && renderShelfCard(kho1SideShelves[1])}
+              {renderShelfCard(shelf, `warehouse-kho1-shelf-${index + 1}`)}
+              {index === 1 && kho1SideShelves[0] && renderShelfCard(kho1SideShelves[0], 'warehouse-kho1-shelf-13')}
+              {index === 2 && kho1SideShelves[1] && renderShelfCard(kho1SideShelves[1], 'warehouse-kho1-shelf-14')}
             </Fragment>)}
-            <div className="warehouse-door-label">Cửa ra vào</div>
+            <div className="warehouse-qc-label">QC</div>
+            <div className="warehouse-table-label">Bàn Kho</div>
+            <div className="warehouse-door-label warehouse-kho1-door">Cửa ra vào</div>
           </div>
           {kho1BottomShelves.length > 0 && <div className="warehouse-layout-kho1-bottom">{kho1BottomShelves.map(renderShelfCard)}</div>}
         </div> : <>
           <div className="warehouse-door-label">Cửa ra vào</div>
           <div className="warehouse-main-aisles">{shelves.slice(0, 2).map(renderShelfCard)}</div>
         </>}
-        {loading ? <div className="warehouse-loading"><Spin size="small" /> Đang tải kệ...</div> : selectedShelf ? <>
+        {loading ? <div className="warehouse-loading">Đang tải kệ...</div> : selectedShelf ? <>
           <div className="warehouse-rack-title">Sơ đồ kệ <strong>{selectedShelf.code}</strong></div>
           <div className="warehouse-slot-hint">Chọn ô để xem đơn hàng; một ô có thể chứa nhiều đơn.</div>
           {selectedPositions.length > 0 && <div className="warehouse-selection-actions">
@@ -462,6 +556,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
             {canEditWarehouse && selectedPositions.length === 1 && selectedShelf.slots.some(slot => slot.position === selectedPositions[0]) && <Button onClick={openAddOrderToOccupiedSlot}>Thêm đơn vào ô</Button>}
             {canEditWarehouse && <Button type="primary" onClick={openOrderEditor}>{selectedPositions.some(position => selectedShelf.slots.some(slot => slot.position === position)) ? 'Sửa đơn hàng' : 'Nhập đơn hàng'}</Button>}
           </div>}
+          {movingOrder && <div className="warehouse-move-hint">Đang chuyển đơn từ <strong>{movingFromPosition}</strong>. Chọn ô đích trên kệ này. <Button size="small" onClick={() => { setMovingOrder(null); setMovingFromPosition(''); }}>Hủy chuyển</Button></div>}
           <div className="warehouse-rack" aria-label={`Sơ đồ kệ ${selectedShelf.code}`}>
             {Array.from({ length: selectedShelf.rows }, (_, level) => <div className="warehouse-rack-row" key={level} style={{ gridTemplateColumns: `repeat(${selectedShelf.columns}, minmax(0, 1fr))` }} aria-label={`Hàng ${level + 1}`}>
               {Array.from({ length: selectedShelf.columns }, (_, index) => {
@@ -470,7 +565,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
                 const slot = slotOrders[0];
                 const zeroAlert = slotOrders.some(isZeroStockShortageOrder);
                 const queryMatch = slotOrders.some(order => matchesSlot(selectedShelf, position, order));
-                return <button key={position} type="button" className={`warehouse-slot${slot ? ' occupied' : ''}${selectedPositions.includes(position) ? ' selected' : ''}${queryMatch ? ' match' : ''}${zeroAlert ? ' zero-stock-shortage' : ''}`} title={`${selectedShelf.code} ${position}${slot ? ` · ${slotOrders.length} đơn: ${slotOrders.map(order => `${order.po} ${order.style}`).join(', ')}` : ''}`} aria-label={`${selectedShelf.code} ${position}${slot ? `, ${slotOrders.length} đơn hàng${zeroAlert ? ', số tồn và số thiếu đều bằng 0' : ''}` : ', ô trống'}`} onClick={() => toggleSlot(position)}>{slot && <><span>{slot.po || slot.style || slot.itemCode || slot.orderNo}</span>{slotOrders.length > 1 && <small className="warehouse-slot-count">+{slotOrders.length - 1}</small>}</>}</button>;
+                return <button key={position} type="button" className={`warehouse-slot${slot ? ' occupied' : ''}${selectedPositions.includes(position) ? ' selected' : ''}${queryMatch ? ' match' : ''}${zeroAlert ? ' zero-stock-shortage' : ''}${movingOrder && movingFromPosition === position ? ' move-source' : ''}`} title={`${selectedShelf.code} ${position}${slot ? ` · ${slotOrders.length} đơn: ${slotOrders.map(order => `${order.po} ${order.style}`).join(', ')}` : ''}`} aria-label={`${selectedShelf.code} ${position}${slot ? `, ${slotOrders.length} đơn hàng${zeroAlert ? ', số tồn và số thiếu đều bằng 0' : ''}` : ', ô trống'}`} onClick={() => movingOrder ? void moveOrderToPosition(position) : toggleSlot(position)}>{slot && <><span>{slot.po || slot.style || slot.itemCode || slot.orderNo}</span>{slotOrders.length > 1 && <small className="warehouse-slot-count">+{slotOrders.length - 1}</small>}</>}</button>;
               })}
             </div>)}
           </div>
@@ -480,6 +575,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
               <span><strong>{order.po || order.orderNo || order.style || order.itemCode}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity ?? 0}</small></span>
               <span className="warehouse-selected-order-positions">{[...new Set(order.positions)].join(', ')}</span>
               {canEditWarehouse && <Button size="small" onClick={() => openEditSelectedOrder(order)}>Sửa</Button>}
+              {canEditWarehouse && <Button size="small" disabled={selectedPositions.length !== 1 || !order.positions.includes(selectedPositions[0])} onClick={() => startMovingOrder(order)}>Chuyển ô</Button>}
             </div>) : <div className="warehouse-selected-order-empty">Các ô đang chọn hiện chưa có đơn hàng.</div>}
           </div>}
           {selectedShelf.slots.length > 0 && <div className="warehouse-stock-summary">Đang lưu {[...new Set(selectedShelf.slots.map(slot => slot.position))].length} ô có hàng · {selectedShelf.slots.length} đơn hàng</div>}
@@ -505,6 +601,16 @@ function WarehousePage({ onBack, canEditWarehouse }) {
           <Button className="warehouse-order-search-button" htmlType="button" onClick={searchOrdersForSlot} loading={slotSearchBusy}>Tìm đơn hàng</Button>
           {slotSearchError && <div className="auth-error" role="alert">{slotSearchError}</div>}
           {selectedCatalogOrder && <div className="warehouse-order-selected"><strong>Đã chọn:</strong> {selectedCatalogOrder.po} · {selectedCatalogOrder.style} · SL đơn {selectedCatalogOrder.quantity}</div>}
+          {batchOrderEntry && <>
+            <Button htmlType="button" disabled={!selectedCatalogOrder} onClick={addSelectedOrderToBatch}>Thêm đơn này vào danh sách</Button>
+            {pendingSlotOrders.length > 0 && <div className="warehouse-batch-orders">
+              <strong>Danh sách sẽ thêm ({pendingSlotOrders.length})</strong>
+              {pendingSlotOrders.map((order, index) => <div className="warehouse-batch-order" key={order.sourceId}>
+                <span><strong>{order.po || order.orderNo || order.style}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity}</small></span>
+                <Button size="small" danger onClick={() => setPendingSlotOrders(current => current.filter((_, itemIndex) => itemIndex !== index))}>Bỏ</Button>
+              </div>)}
+            </div>}
+          </>}
           {slotOrderResults.length > 0 && <div className="warehouse-order-results">
             {slotOrderResults.map((order, index) => <button key={order.id || `${order.po}-${order.style}-${index}`} type="button" className="warehouse-order-result" onClick={() => chooseCatalogOrder(order)}>
               <strong>PO {order.po || '—'} · Hình thể {order.style || '—'}</strong>
@@ -517,7 +623,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
           <div className="warehouse-form-actions">
             {editingExistingOrder && <Popconfirm title="Xóa đơn hàng khỏi tất cả ô đang chứa đơn này?" okText="Xóa" cancelText="Hủy" onConfirm={deleteSelectedOrder}><Button danger loading={saving}>Xóa đơn</Button></Popconfirm>}
             <span />
-            <Button onClick={() => setDialog('')}>Hủy</Button><Button type="primary" htmlType="submit" loading={saving}>Lưu hàng</Button>
+            <Button onClick={() => setDialog('')}>Hủy</Button><Button type="primary" htmlType="submit" loading={saving}>{batchOrderEntry ? `Lưu ${pendingSlotOrders.length} đơn` : 'Lưu hàng'}</Button>
           </div>
         </form>
       </Modal>
