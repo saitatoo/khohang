@@ -188,10 +188,9 @@ button, input { font: inherit; }
 .warehouse-tab.ant-btn.active { border-color: #32974a; color: #278640; background: #eff8f0; box-shadow: inset 0 0 0 1px #32974a; }
 .warehouse-map { position: relative; min-height: 500px; padding: 36px 16px 34px; border: 2px solid #30363c; border-radius: 9px; background: #fffefa; }
 .warehouse-layout-kho1 { display: grid; gap: 10px; }
-.warehouse-layout-kho1-top { position: relative; display: grid; gap: 8px; padding-right: 48px; }
+.warehouse-layout-kho1-top { position: relative; display: grid; grid-template-columns: 56% minmax(0, 1fr); gap: 8px 14px; padding-right: 48px; }
 .warehouse-layout-kho1-top .warehouse-aisle-card { min-height: 58px; }
-.warehouse-layout-kho1-top .warehouse-aisle-card:first-child { width: 100%; }
-.warehouse-layout-kho1-top .warehouse-aisle-card:not(:first-child) { width: 56%; }
+.warehouse-layout-kho1-top .warehouse-aisle-card:first-child { grid-column: 1 / -1; width: 100%; }
 .warehouse-layout-kho1-top .warehouse-door-label { top: 50%; right: 0; left: auto; padding: 6px 2px; transform: translateY(-50%); writing-mode: vertical-rl; }
 .warehouse-layout-kho1-bottom { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; }
 .warehouse-layout-kho1-bottom .warehouse-aisle-card { min-height: 60px; }
@@ -208,14 +207,17 @@ button, input { font: inherit; }
 .warehouse-aisle-mark { display: grid; height: 10px; grid-column: 1 / -1; gap: 1px; }
 .warehouse-aisle-mark i { min-width: 0; background: #fff; }
 .warehouse-aisle-mark i.occupied { background: #e9a02a; }
+.warehouse-aisle-mark i.zero-stock-shortage { background: #e5484d; }
 .warehouse-rack { display: grid; gap: 2px; margin: 16px 0 0; padding: 5px; border: 1px solid #293039; border-radius: 7px; background: #fff; box-shadow: 0 4px 9px #0000000c; }
 .warehouse-rack-row { display: grid; height: 17px; grid-template-columns: repeat(15,minmax(0,1fr)); gap: 2px; }
-.warehouse-slot { min-width: 0; padding: 0; border: 1px solid #222; border-radius: 0; background: #fff; cursor: pointer; }
+.warehouse-slot { position: relative; min-width: 0; padding: 0; border: 1px solid #222; border-radius: 0; background: #fff; cursor: pointer; }
 .warehouse-slot.selected,.warehouse-slot.match { background: #ffdf68; }
 .warehouse-slot.occupied { border-color: #c98a16; background: #ffdf68; }
 .warehouse-slot.match { position: relative; z-index: 1; border: 2px solid #16833d; background: #fff1b8; }
 .warehouse-slot.selected { position: relative; z-index: 1; border: 2px solid #16833d; background: #bce8c4; box-shadow: inset 0 0 0 1px #fff; }
+.warehouse-slot.zero-stock-shortage { border-color: #b4232a; background: #e5484d !important; box-shadow: inset 0 0 0 1px #b4232a; }
 .warehouse-slot span { display: block; overflow: hidden; color: #3f4548; font-size: 8px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+.warehouse-slot .warehouse-slot-count { position: absolute; right: 0; bottom: 0; padding: 1px 2px; border-radius: 3px 0 0; color: #fff; background: #4b5257; font-size: 7px; line-height: 1; }
 .warehouse-rack-title { margin-top: 15px; color: #747c80; font-size: 11px; text-align: center; }
 .warehouse-slot-hint { margin-top: 3px; color: #9a9fa2; font-size: 10px; text-align: center; }
 .warehouse-selection-actions { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 6px; margin: 9px 0 -10px; color: #5b6469; font-size: 10px; }

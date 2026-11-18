@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { Button, Card, ConfigProvider, Dropdown, Empty, Input, Modal, Popconfirm, QRCode, Spin, Switch, Table, Typography } from 'antd';
 
 // The frontend and API share one origin on Vercel, so API requests use /api directly.
@@ -90,6 +90,7 @@ function AuthScreen({ onAuthenticated, initialError }) {
 }
 
 const isZeroValue = value => /^[+-]?0+(?:[.,]0+)?$/.test(String(value ?? '').trim());
+const normalizeOrderKey = value => String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 const isNonZeroValue = value => {
   const text = String(value ?? '').trim();
   if (!text) return false;
@@ -125,6 +126,7 @@ const orderColumns = [
 function WarehousePage({ onBack, canEditWarehouse }) {
   const [warehouse, setWarehouse] = useState('Kho 2');
   const [shelves, setShelves] = useState([]);
+  const [zeroStockShortageOrders, setZeroStockShortageOrders] = useState([]);
   const [selectedShelfId, setSelectedShelfId] = useState('');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -135,6 +137,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
   const [selectedPositions, setSelectedPositions] = useState([]);
   const [activeAllocationId, setActiveAllocationId] = useState('');
   const [editingExistingOrder, setEditingExistingOrder] = useState(false);
+  const [addingOrderToOccupiedSlot, setAddingOrderToOccupiedSlot] = useState(false);
   const [shelfForm, setShelfForm] = useState({ code: '', rows: '2', columns: '8' });
   const [slotForm, setSlotForm] = useState({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
   const [slotOrderResults, setSlotOrderResults] = useState([]);
@@ -147,6 +150,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
   const positionCode = (level, position) => `R${level + 1}-C${String(position + 1).padStart(2, '0')}`;
   const matchesShelf = shelf => normalizedQuery && `${shelf.code} ${shelf.slots.map(slot => `${slot.position} ${slot.orderNo} ${slot.po} ${slot.style} ${slot.itemCode} ${slot.itemName} ${slot.supplier}`).join(' ')}`.toLocaleLowerCase().includes(normalizedQuery);
   const matchesSlot = (shelf, position, slot) => normalizedQuery && `${shelf.code}-${position} ${slot?.orderNo || ''} ${slot?.po || ''} ${slot?.style || ''} ${slot?.itemCode || ''} ${slot?.itemName || ''} ${slot?.supplier || ''}`.toLocaleLowerCase().includes(normalizedQuery);
+  const isZeroStockShortageOrder = slot => zeroStockShortageOrders.includes(`${normalizeOrderKey(slot?.po)}|${normalizeOrderKey(slot?.style)}`);
   const searchResults = normalizedQuery ? shelves.flatMap(shelf => {
     const matchingSlots = shelf.slots.filter(slot => matchesSlot(shelf, slot.position, slot));
     const groups = new Map();
@@ -169,14 +173,23 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       groups.get(key).positions.push(slot.position);
       return groups;
     }, new Map()).values()] : [];
+  const kho1TopShelves = shelves.slice(0, 4);
+  const kho1SideShelves = ['K13', 'K14'].map(code => shelves.find(shelf => shelf.code === code)).filter(Boolean);
+  const kho1BottomShelves = shelves.slice(4).filter(shelf => !['K13', 'K14'].includes(shelf.code));
 
   async function loadShelves(currentWarehouse = warehouse) {
     setLoading(true);
     try {
-      const response = await fetch(`${API_ROOT}/api/warehouses?warehouse=${encodeURIComponent(currentWarehouse)}`, { headers: { Authorization: `Bearer ${token()}` } });
-      const result = await readApiJson(response);
+      const headers = { Authorization: `Bearer ${token()}` };
+      const [response, zeroOrdersResponse] = await Promise.all([
+        fetch(`${API_ROOT}/api/warehouses?warehouse=${encodeURIComponent(currentWarehouse)}`, { headers }),
+        fetch(`${API_ROOT}/api/orders/warehouse-zero-orders`, { headers }),
+      ]);
+      const [result, zeroOrdersResult] = await Promise.all([readApiJson(response), readApiJson(zeroOrdersResponse)]);
       if (!response.ok) throw new Error(result.message || 'Không tải được danh sách kệ.');
+      if (!zeroOrdersResponse.ok) throw new Error(zeroOrdersResult.message || 'Không tải được trạng thái đơn hàng.');
       setShelves(result);
+      setZeroStockShortageOrders([...new Set((zeroOrdersResult.orders || []).map(order => `${order.po}|${order.style}`))]);
       setSelectedShelfId(current => result.some(item => item._id === current) ? current : result[0]?._id || '');
       setError('');
     } catch (requestError) {
@@ -201,14 +214,9 @@ function WarehousePage({ onBack, canEditWarehouse }) {
   }
 
   function toggleSlot(position) {
-    const slot = selectedShelf?.slots.find(item => item.position === position);
-    const relatedPositions = slot?.allocationId
-      ? selectedShelf.slots.filter(item => item.allocationId === slot.allocationId).map(item => item.position)
-      : [position];
     setSelectedPositions(current => {
       if (current.includes(position)) return current.filter(item => item !== position);
-      const anyRelatedSelected = relatedPositions.some(item => current.includes(item));
-      return [...new Set([...current, ...(anyRelatedSelected ? [position] : relatedPositions)])];
+      return [...current, position];
     });
   }
 
@@ -230,11 +238,38 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       return;
     }
     setError('');
+    setAddingOrderToOccupiedSlot(false);
     setActiveAllocationId(sameOrderId);
     setEditingExistingOrder(Boolean(order));
     setSlotForm({ orderNo: order?.orderNo || '', po: order?.po || '', style: order?.style || '', itemCode: order?.itemCode || '', etd: order?.etd || '', supplier: order?.supplier || '', quantity: String(order?.quantity ?? 0), note: order?.note || '' });
     setSlotOrderResults([]);
     setSelectedCatalogOrder(order || null);
+    setSlotSearchError('');
+    setDialog('slot');
+  }
+
+  function openAddOrderToOccupiedSlot() {
+    if (!selectedShelf || selectedPositions.length !== 1) return;
+    setError('');
+    setActiveAllocationId('');
+    setEditingExistingOrder(false);
+    setAddingOrderToOccupiedSlot(true);
+    setSlotForm({ orderNo: '', po: '', style: '', itemCode: '', etd: '', supplier: '', quantity: '0', note: '' });
+    setSlotOrderResults([]);
+    setSelectedCatalogOrder(null);
+    setSlotSearchError('');
+    setDialog('slot');
+  }
+
+  function openEditSelectedOrder(order) {
+    setSelectedPositions([...new Set(order.positions)]);
+    setError('');
+    setAddingOrderToOccupiedSlot(false);
+    setActiveAllocationId(order.allocationId || '');
+    setEditingExistingOrder(true);
+    setSlotForm({ orderNo: order.orderNo || '', po: order.po || '', style: order.style || '', itemCode: order.itemCode || '', etd: order.etd || '', supplier: order.supplier || '', quantity: String(order.quantity ?? 0), note: order.note || '' });
+    setSlotOrderResults([]);
+    setSelectedCatalogOrder(order);
     setSlotSearchError('');
     setDialog('slot');
   }
@@ -287,7 +322,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       const response = await fetch(`${API_ROOT}/api/warehouses/${selectedShelf._id}/orders`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...slotForm, quantity: Number(slotForm.quantity), positions: selectedPositions, allocationId: activeAllocationId }),
+        body: JSON.stringify({ ...slotForm, quantity: Number(slotForm.quantity), positions: selectedPositions, allocationId: activeAllocationId, append: addingOrderToOccupiedSlot }),
       });
       const result = await readApiJson(response);
       if (!response.ok) throw new Error(result.message || 'Không lưu được hàng trong ô.');
@@ -374,8 +409,10 @@ function WarehousePage({ onBack, canEditWarehouse }) {
   const renderShelfCard = shelf => <div key={shelf._id} className={`warehouse-aisle-card${selectedShelf?._id === shelf._id ? ' active' : ''}${matchesShelf(shelf) ? ' match' : ''}`}>
     <button type="button" className="warehouse-shelf-select" onClick={() => { setSelectedShelfId(shelf._id); setSelectedPositions([]); }}><span className="warehouse-aisle-name">{shelf.code}</span><span className="warehouse-capacity">{shelf.rows * shelf.columns} ô</span><span className="warehouse-aisle-mark" style={{ gridTemplateColumns: `repeat(${shelf.columns}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${shelf.rows}, minmax(0, 1fr))` }} aria-hidden="true">{Array.from({ length: shelf.rows * shelf.columns }, (_, index) => {
       const position = positionCode(Math.floor(index / shelf.columns), index % shelf.columns);
-      const occupied = shelf.slots.some(slot => slot.position === position);
-      return <i key={position} className={occupied ? 'occupied' : ''} />;
+      const slotOrders = shelf.slots.filter(slot => slot.position === position);
+      const occupied = slotOrders.length > 0;
+      const zeroAlert = slotOrders.some(isZeroStockShortageOrder);
+      return <i key={position} className={`${occupied ? 'occupied' : ''}${zeroAlert ? ' zero-stock-shortage' : ''}`} />;
     })}</span></button>
     {canEditWarehouse && <span className="warehouse-shelf-tools"><Button size="small" onClick={() => openEditShelf(shelf)}>Sửa</Button><Popconfirm title={`Xóa kệ ${shelf.code} và hàng trong kệ?`} okText="Xóa" cancelText="Hủy" onConfirm={() => deleteShelf(shelf)}><Button size="small" danger>Xóa</Button></Popconfirm></span>}
   </div>;
@@ -404,28 +441,36 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       <div className="warehouse-map">
         {warehouse === 'Kho 1' ? <div className="warehouse-layout-kho1">
           <div className="warehouse-layout-kho1-top">
-            {shelves.slice(0, 4).map(renderShelfCard)}
+            {kho1TopShelves.map((shelf, index) => <Fragment key={shelf._id}>
+              {renderShelfCard(shelf)}
+              {index === 1 && kho1SideShelves[0] && renderShelfCard(kho1SideShelves[0])}
+              {index === 2 && kho1SideShelves[1] && renderShelfCard(kho1SideShelves[1])}
+            </Fragment>)}
             <div className="warehouse-door-label">Cửa ra vào</div>
           </div>
-          {shelves.length > 4 && <div className="warehouse-layout-kho1-bottom">{shelves.slice(4).map(renderShelfCard)}</div>}
+          {kho1BottomShelves.length > 0 && <div className="warehouse-layout-kho1-bottom">{kho1BottomShelves.map(renderShelfCard)}</div>}
         </div> : <>
           <div className="warehouse-door-label">Cửa ra vào</div>
           <div className="warehouse-main-aisles">{shelves.slice(0, 2).map(renderShelfCard)}</div>
         </>}
         {loading ? <div className="warehouse-loading"><Spin size="small" /> Đang tải kệ...</div> : selectedShelf ? <>
           <div className="warehouse-rack-title">Sơ đồ kệ <strong>{selectedShelf.code}</strong></div>
-          <div className="warehouse-slot-hint">Chọn một hoặc nhiều ô để xếp cùng một đơn hàng vào các vị trí đó.</div>
+          <div className="warehouse-slot-hint">Chọn ô để xem đơn hàng; một ô có thể chứa nhiều đơn.</div>
           {selectedPositions.length > 0 && <div className="warehouse-selection-actions">
             <span>Đã chọn <strong>{selectedPositions.length}</strong> ô: <strong>{selectedPositions.join(', ')}</strong></span>
             <Button onClick={() => setSelectedPositions([])}>Bỏ chọn</Button>
+            {canEditWarehouse && selectedPositions.length === 1 && selectedShelf.slots.some(slot => slot.position === selectedPositions[0]) && <Button onClick={openAddOrderToOccupiedSlot}>Thêm đơn vào ô</Button>}
             {canEditWarehouse && <Button type="primary" onClick={openOrderEditor}>{selectedPositions.some(position => selectedShelf.slots.some(slot => slot.position === position)) ? 'Sửa đơn hàng' : 'Nhập đơn hàng'}</Button>}
           </div>}
           <div className="warehouse-rack" aria-label={`Sơ đồ kệ ${selectedShelf.code}`}>
             {Array.from({ length: selectedShelf.rows }, (_, level) => <div className="warehouse-rack-row" key={level} style={{ gridTemplateColumns: `repeat(${selectedShelf.columns}, minmax(0, 1fr))` }} aria-label={`Hàng ${level + 1}`}>
               {Array.from({ length: selectedShelf.columns }, (_, index) => {
                 const position = positionCode(level, index);
-                const slot = selectedShelf.slots.find(item => item.position === position);
-                return <button key={position} type="button" className={`warehouse-slot${slot ? ' occupied' : ''}${selectedPositions.includes(position) ? ' selected' : ''}${matchesSlot(selectedShelf, position, slot) ? ' match' : ''}`} title={`${selectedShelf.code} ${position}${slot ? ` · PO ${slot.po} · ${slot.style} · ${slot.quantity}` : ''}`} aria-label={`${selectedShelf.code} ${position}${slot ? `, PO ${slot.po}, hình thể ${slot.style}, số lượng ${slot.quantity}` : ', ô trống'}`} onClick={() => toggleSlot(position)}>{slot && <span>{slot.po || slot.style || slot.itemCode || slot.orderNo}</span>}</button>;
+                const slotOrders = selectedShelf.slots.filter(item => item.position === position);
+                const slot = slotOrders[0];
+                const zeroAlert = slotOrders.some(isZeroStockShortageOrder);
+                const queryMatch = slotOrders.some(order => matchesSlot(selectedShelf, position, order));
+                return <button key={position} type="button" className={`warehouse-slot${slot ? ' occupied' : ''}${selectedPositions.includes(position) ? ' selected' : ''}${queryMatch ? ' match' : ''}${zeroAlert ? ' zero-stock-shortage' : ''}`} title={`${selectedShelf.code} ${position}${slot ? ` · ${slotOrders.length} đơn: ${slotOrders.map(order => `${order.po} ${order.style}`).join(', ')}` : ''}`} aria-label={`${selectedShelf.code} ${position}${slot ? `, ${slotOrders.length} đơn hàng${zeroAlert ? ', số tồn và số thiếu đều bằng 0' : ''}` : ', ô trống'}`} onClick={() => toggleSlot(position)}>{slot && <><span>{slot.po || slot.style || slot.itemCode || slot.orderNo}</span>{slotOrders.length > 1 && <small className="warehouse-slot-count">+{slotOrders.length - 1}</small>}</>}</button>;
               })}
             </div>)}
           </div>
@@ -433,10 +478,11 @@ function WarehousePage({ onBack, canEditWarehouse }) {
             <strong className="warehouse-selected-orders-title">Đơn hàng trong ô đang chọn</strong>
             {selectedOrderGroups.length ? selectedOrderGroups.map((order, index) => <div className="warehouse-selected-order" key={order.allocationId || `${order.orderNo}-${order.po}-${order.style}-${index}`}>
               <span><strong>{order.po || order.orderNo || order.style || order.itemCode}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity ?? 0}</small></span>
-              <span className="warehouse-selected-order-positions">{order.positions.join(', ')}</span>
+              <span className="warehouse-selected-order-positions">{[...new Set(order.positions)].join(', ')}</span>
+              {canEditWarehouse && <Button size="small" onClick={() => openEditSelectedOrder(order)}>Sửa</Button>}
             </div>) : <div className="warehouse-selected-order-empty">Các ô đang chọn hiện chưa có đơn hàng.</div>}
           </div>}
-          {selectedShelf.slots.length > 0 && <div className="warehouse-stock-summary">Đang lưu {selectedShelf.slots.length} ô có hàng</div>}
+          {selectedShelf.slots.length > 0 && <div className="warehouse-stock-summary">Đang lưu {[...new Set(selectedShelf.slots.map(slot => slot.position))].length} ô có hàng · {selectedShelf.slots.length} đơn hàng</div>}
         </> : !loading && <div className="warehouse-empty">Chưa có kệ. Nhấn “+ Thêm kệ” để tạo kệ đầu tiên.</div>}
         {warehouse !== 'Kho 1' && !loading && shelves.length > 2 && <div className="warehouse-bottom-shelves">{shelves.slice(2).map(renderShelfCard)}</div>}
       </div>
@@ -452,7 +498,7 @@ function WarehousePage({ onBack, canEditWarehouse }) {
           <div className="warehouse-form-actions"><Button onClick={() => setDialog('')}>Hủy</Button><Button type="primary" htmlType="submit" loading={saving}>Lưu kệ</Button></div>
         </form>
       </Modal>
-      <Modal title={`${editingExistingOrder ? 'Sửa đơn hàng' : 'Nhập đơn hàng'} ${selectedShelf?.code || ''} · ${selectedPositions.length} ô`} open={dialog === 'slot'} onCancel={() => setDialog('')} footer={null} destroyOnClose>
+      <Modal title={`${addingOrderToOccupiedSlot ? 'Thêm đơn vào ô' : editingExistingOrder ? 'Sửa đơn hàng' : 'Nhập đơn hàng'} ${selectedShelf?.code || ''} · ${selectedPositions.join(', ')}`} open={dialog === 'slot'} onCancel={() => setDialog('')} footer={null} destroyOnClose>
         <form className="warehouse-form" onSubmit={saveSlot}>
           <label>PO<Input value={slotForm.po} onChange={event => { setSlotForm(current => ({ ...current, po: event.target.value })); setSelectedCatalogOrder(null); setSlotOrderResults([]); }} /></label>
           <label>Hình thể / Style<Input value={slotForm.style} onChange={event => { setSlotForm(current => ({ ...current, style: event.target.value })); setSelectedCatalogOrder(null); setSlotOrderResults([]); }} /></label>

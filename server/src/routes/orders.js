@@ -30,6 +30,22 @@ router.post('/sync/upload', requireAuth, requireAdmin, express.raw({ type: 'appl
   }
 });
 
+router.get('/warehouse-zero-orders', requireAuth, async (_req, res, next) => {
+  try {
+    const state = await OrderSyncState.findById('orders').lean();
+    if (!state?.activeVersion) return res.json({ orders: [] });
+    const zeroValue = /^[+-]?0+(?:[.,]0+)?$/;
+    const orders = await Order.find({
+      syncVersion: state.activeVersion,
+      stock: zeroValue,
+      shortage: zeroValue,
+    }).select('normalizedPo normalizedStyle').lean();
+    res.json({ orders: orders.map(({ normalizedPo, normalizedStyle }) => ({ po: normalizedPo, style: normalizedStyle })) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/', requireAuth, async (req, res, next) => {
   try {
     const style = normalizeOrderValue(req.query.style);

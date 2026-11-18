@@ -38,13 +38,13 @@ async function initializeDefaultShelves() {
     }
   }
 
-  // Kho 1 has twelve fixed default shelves. Upserts keep this safe to run
+  // Kho 1 has fourteen fixed default shelves. Upserts keep this safe to run
   // whenever the warehouse list is requested and preserve existing shelf data.
-  for (let index = 1; index <= 12; index += 1) {
+  for (let index = 1; index <= 14; index += 1) {
     const code = `K${String(index).padStart(2, '0')}`;
     await WarehouseShelf.updateOne(
       { warehouse: 'Kho 1', code },
-      { $set: { sortOrder: index }, $setOnInsert: { rows: 2, columns: 8 } },
+      { $set: { sortOrder: index }, $setOnInsert: { rows: 2, columns: index >= 13 ? 18 : 8 } },
       { upsert: true },
     );
   }
@@ -52,7 +52,7 @@ async function initializeDefaultShelves() {
   const layoutId = 'default-shelf-layout-v2';
   if (await WarehouseSetup.exists({ _id: layoutId })) return;
   const defaults = [
-    ['Kho 1', 'K11', 8], ['Kho 1', 'K12', 8], ['Kho 1', 'K13', 20],
+    ['Kho 1', 'K11', 8], ['Kho 1', 'K12', 8],
     ['Kho 2', 'K01', 8], ['Kho 2', 'K02', 8], ['Kho 2', 'K03', 20],
   ];
   let migrationComplete = true;
@@ -186,6 +186,8 @@ router.put('/:id/orders', requireWarehouseEditor, async (req, res, next) => {
       }
     }
     const allocationId = String(req.body?.allocationId || '');
+    const append = req.body?.append === true;
+    if (append && positions.length !== 1) return res.status(400).json({ message: 'Chỉ có thể thêm một đơn vào một ô mỗi lần.' });
     const orderNo = String(req.body?.orderNo || '').trim();
     const po = String(req.body?.po || '').trim();
     const style = String(req.body?.style || '').trim();
@@ -194,12 +196,12 @@ router.put('/:id/orders', requireWarehouseEditor, async (req, res, next) => {
     if (!orderNo && !po && !style) return res.status(400).json({ message: 'Nhập ít nhất số chỉ lệnh, PO hoặc hình thể.' });
     if (!Number.isFinite(quantity) || quantity < 0) return res.status(400).json({ message: 'Số lượng phải từ 0 trở lên.' });
 
-    const occupiedElsewhere = shelf.slots.some(slot => positions.includes(slot.position)
+    const occupiedElsewhere = !append && shelf.slots.some(slot => positions.includes(slot.position)
       && slot.allocationId && slot.allocationId !== allocationId);
     if (occupiedElsewhere) return res.status(409).json({ message: 'Một hoặc nhiều ô đã thuộc đơn hàng khác. Hãy bỏ chọn các ô đó.' });
 
-    const id = allocationId || randomUUID();
-    shelf.slots = shelf.slots.filter(slot => slot.allocationId !== id && !positions.includes(slot.position));
+    const id = append ? randomUUID() : allocationId || randomUUID();
+    if (!append) shelf.slots = shelf.slots.filter(slot => slot.allocationId !== id && !positions.includes(slot.position));
     const orderData = {
       allocationId: id,
       orderNo,
