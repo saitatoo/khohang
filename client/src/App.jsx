@@ -203,6 +203,21 @@ function WarehousePage({ onBack, canEditWarehouse }) {
     }
   }
 
+  // Order mutations return the updated shelf, so keep the warehouse view in sync
+  // from that response instead of fetching every shelf again.
+  function applyShelfUpdate(updatedShelf) {
+    if (!updatedShelf?._id) return;
+    setShelves(current => current.map(shelf => shelf._id === updatedShelf._id ? updatedShelf : shelf));
+  }
+
+  async function refreshZeroStockOrders() {
+    try {
+      const response = await fetch(`${API_ROOT}/api/orders/warehouse-zero-orders`, { headers: { Authorization: `Bearer ${token()}` } });
+      const result = await readApiJson(response);
+      if (response.ok) setZeroStockShortageOrders([...new Set((result.orders || []).map(order => `${order.po}|${order.style}`))]);
+    } catch { /* Keep the current indicators if the lightweight refresh fails. */ }
+  }
+
   useEffect(() => { void loadShelves(warehouse); }, [warehouse]);
 
   function openNewShelf() {
@@ -350,10 +365,11 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       });
       const result = await readApiJson(response);
       if (!response.ok) throw new Error(result.message || 'Không chuyển được đơn sang ô mới.');
+      applyShelfUpdate(result);
       setMovingOrder(null);
       setMovingFromPosition('');
       setSelectedPositions([destinationPosition]);
-      await loadShelves();
+      void refreshZeroStockOrders();
     } catch (requestError) {
       setError(requestError.message || 'Không chuyển được đơn sang ô mới.');
     } finally {
@@ -421,7 +437,8 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       setSelectedPositions([]);
       setActiveAllocationId('');
       setPendingSlotOrders([]);
-      await loadShelves();
+      applyShelfUpdate(result);
+      void refreshZeroStockOrders();
     } catch (requestError) {
       setError(requestError.message || 'Không lưu được hàng trong ô.');
     } finally {
@@ -484,7 +501,8 @@ function WarehousePage({ onBack, canEditWarehouse }) {
       setDialog('');
       setSelectedPositions([]);
       setActiveAllocationId('');
-      await loadShelves();
+      applyShelfUpdate(result);
+      void refreshZeroStockOrders();
     } catch (requestError) {
       setError(requestError.message || 'Không xóa được hàng khỏi ô.');
     } finally {
