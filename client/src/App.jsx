@@ -589,11 +589,10 @@ function WarehousePage({ onBack, canEditWarehouse }) {
           </div>
           {selectedPositions.length > 0 && <div className="warehouse-selected-orders">
             <strong className="warehouse-selected-orders-title">Đơn hàng trong ô đang chọn</strong>
-            {selectedOrderGroups.length ? selectedOrderGroups.map((order, index) => <div className="warehouse-selected-order" key={order.allocationId || `${order.orderNo}-${order.po}-${order.style}-${index}`}>
-              <span><strong>{order.po || order.orderNo || order.style || order.itemCode}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity ?? 0}</small></span>
-              <span className="warehouse-selected-order-positions">{[...new Set(order.positions)].join(', ')}</span>
-              {canEditWarehouse && <Button size="small" onClick={() => openEditSelectedOrder(order)}>Sửa</Button>}
-              {canEditWarehouse && <Button size="small" disabled={selectedPositions.length !== 1 || !order.positions.includes(selectedPositions[0])} onClick={() => startMovingOrder(order)}>Chuyển ô</Button>}
+            {selectedOrderGroups.length ? selectedOrderGroups.map((order, index) => <div className={`warehouse-selected-order${isZeroStockShortageOrder(order) ? ' zero-stock-shortage' : ''}`} key={order.allocationId || `${order.orderNo}-${order.po}-${order.style}-${index}`}>
+              <div className="warehouse-selected-order-info"><span><strong>{order.po || order.orderNo || order.style || order.itemCode}</strong>{order.style && order.po && <small> · {order.style}</small>}<small> · SL {order.quantity ?? 0}</small></span>
+              <span className="warehouse-selected-order-positions">{[...new Set(order.positions)].join(', ')}</span></div>
+              {canEditWarehouse && <div className="warehouse-selected-order-actions"><Button size="small" onClick={() => openEditSelectedOrder(order)}>Sửa</Button><Button size="small" disabled={selectedPositions.length !== 1 || !order.positions.includes(selectedPositions[0])} onClick={() => startMovingOrder(order)}>Chuyển ô</Button></div>}
             </div>) : <div className="warehouse-selected-order-empty">Các ô đang chọn hiện chưa có đơn hàng.</div>}
           </div>}
           {selectedShelf.slots.length > 0 && <div className="warehouse-stock-summary">Đang lưu {[...new Set(selectedShelf.slots.map(slot => slot.position))].length} ô có hàng · {selectedShelf.slots.length} đơn hàng</div>}

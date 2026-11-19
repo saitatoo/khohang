@@ -236,7 +236,13 @@ button, input { font: inherit; }
 .warehouse-selection-actions .ant-btn { height: 25px; padding: 0 8px; border-radius: 7px; font-size: 10px; }
 .warehouse-selected-orders { display: grid; gap: 5px; margin-top: 10px; padding: 9px 10px; border: 1px solid #dce8dd; border-radius: 8px; background: #f8fcf8; }
 .warehouse-selected-orders-title { color: #4f6253; font-size: 10px; }
-.warehouse-selected-order { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 5px; border-top: 1px solid #e7eee8; color: #30363c; font-size: 10px; }
+.warehouse-selected-order { display: flex; align-items: stretch; flex-direction: column; gap: 6px; padding-top: 7px; border-top: 1px solid #e7eee8; color: #30363c; font-size: 10px; }
+.warehouse-selected-order-info { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.warehouse-selected-order-actions { display: flex; align-items: center; gap: 6px; }
+.warehouse-selected-order-actions .ant-btn { height: 25px; padding: 0 9px; border-radius: 7px; font-size: 10px; }
+.warehouse-selected-order.zero-stock-shortage { margin: 0 -5px; padding: 7px 5px 5px; border-radius: 6px; color: #b4232a; background: #fff0f0; }
+.warehouse-selected-order.zero-stock-shortage strong,.warehouse-selected-order.zero-stock-shortage small { color: #b4232a; }
+.warehouse-selected-order.zero-stock-shortage .warehouse-selected-order-positions { color: #b4232a; }
 .warehouse-selected-order small,.warehouse-selected-order-positions,.warehouse-selected-order-empty { color: #747c80; font-size: 10px; }
 .warehouse-selected-order-positions { flex: none; color: #278640; font-weight: 700; }
 .warehouse-selected-order-empty { padding-top: 3px; }
